@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.2.0 (2026-06-14)
+    - Sheet URL hardcoded in CONFIG (not a secret)
+    - Gemini API key fetched from Config tab in Google Sheet on app load
+    - Removed Integrations section from Settings (no manual key entry needed)
+    - App works on any device without setup
+
   v1.1.0 (2026-06-14)
     - Removed hardcoded API keys from source code
     - API key and Sheet URL now entered via Settings → Integrations, stored in localStorage
@@ -183,8 +189,8 @@ textarea { resize: none; }
 ════════════════════════════════════════════════════ -->
 <script>
 const CONFIG = {
-  geminiApiKey: '',         // Stored in localStorage — enter in Settings
-  googleSheetUrl: '',       // Stored in localStorage — enter in Settings
+  geminiApiKey: '',         // Fetched from Config tab in Google Sheet on load
+  googleSheetUrl: 'https://script.google.com/macros/s/AKfycbz_rQoPkoHaqa0nT5RIjHRfjMN34VRvwL-VKXvJsTaBqz5cSVN14N-fAJh98ATGNUqpaA/exec',
   personA: '',
   personB: '',
   currency: 'THB',
@@ -354,30 +360,16 @@ const CONFIG = {
       </div>
     </div>
 
-    <div class="sec-label">Integrations</div>
-    <div class="card">
-      <div class="card-row" onclick="editSecret('gemini')" style="cursor:pointer;">
-        <div>
-          <div class="row-label">Gemini API key</div>
-          <div style="font-size:11px;color:var(--text3);" id="gemini-key-status">Not set</div>
-        </div>
-        <div class="row-val" id="ocr-status"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-      <div class="card-row" onclick="editSecret('sheet')" style="cursor:pointer;">
-        <div>
-          <div class="row-label">Google Sheet URL</div>
-          <div style="font-size:11px;color:var(--text3);" id="sheet-url-status">Not set</div>
-        </div>
-        <div class="row-val" id="storage-status"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-    </div>
-
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.1.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.2.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </div>
+      <div class="card-row">
+        <div class="row-label">Receipt OCR</div>
+        <div class="row-val" id="ocr-status"><span class="badge badge-acc">Loading…</span></div>
       </div>
     </div>
     <div style="height:8px;"></div>
@@ -914,11 +906,8 @@ function updateSettingsUI() {
   document.getElementById('av-b-settings').textContent = CONFIG.personB ? CONFIG.personB[0].toUpperCase() : '?';
   document.getElementById('currency-val').innerHTML = CONFIG.currency + ' ' + CONFIG.currencySymbol + ' <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;opacity:0.5;vertical-align:-2px;"><polyline points="9 18 15 12 9 6"/></svg>';
   const hasGemini = CONFIG.geminiApiKey && CONFIG.geminiApiKey.length > 5;
-  document.getElementById('gemini-key-status').textContent = hasGemini ? '✓ Saved' : 'Tap to add';
-  document.getElementById('gemini-key-status').style.color = hasGemini ? 'var(--grn)' : 'var(--red)';
-  const hasGSheet = CONFIG.googleSheetUrl && CONFIG.googleSheetUrl.length > 10;
-  document.getElementById('sheet-url-status').textContent = hasGSheet ? '✓ Saved' : 'Tap to add';
-  document.getElementById('sheet-url-status').style.color = hasGSheet ? 'var(--grn)' : 'var(--red)';
+  const ocrEl = document.getElementById('ocr-status');
+  if (ocrEl) ocrEl.innerHTML = hasGemini ? '<span class="badge badge-acc">Gemini AI ✓</span>' : '<span class="badge badge-red">Not loaded</span>';
 }
 
 function editName(person) {
@@ -1512,6 +1501,21 @@ function renderSummary() {
     (aPaid > bPaid ? nameA : nameB) + ' paid ' + fmt(diff) + ' more';
 }
 
+// ── FETCH GEMINI KEY FROM CONFIG TAB ─────────────────
+async function fetchConfigFromSheet() {
+  if (!CONFIG.googleSheetUrl) return;
+  try {
+    const resp = await fetch(CONFIG.googleSheetUrl + '?action=getConfig');
+    const data = await resp.json();
+    if (data.config && data.config.gemini_key) {
+      CONFIG.geminiApiKey = data.config.gemini_key;
+      updateSettingsUI();
+    }
+  } catch(e) {
+    console.warn('Could not fetch config from sheet:', e);
+  }
+}
+
 // ── SYNC FROM SHEETS ON LOAD ──────────────────────────
 async function syncFromSheets() {
   if (!CONFIG.googleSheetUrl) return;
@@ -1548,8 +1552,8 @@ window.addEventListener('DOMContentLoaded', () => {
   initManualItems();
   updateWhoPayNames();
   ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
-  // Sync from Google Sheets in background
-  syncFromSheets();
+  // Fetch Gemini key from Config tab, then sync bills
+  fetchConfigFromSheet().then(() => syncFromSheets());
 });
 </script>
 
