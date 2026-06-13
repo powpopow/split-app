@@ -2,6 +2,14 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.4.2 (2026-06-14)
+    - Fix: "Open Google Sheet" in Settings now opens the actual spreadsheet
+      instead of the Apps Script endpoint URL
+
+  v1.4.1 (2026-06-14)
+    - Fix: "Next →" button on Review screen hidden behind bottom nav bar
+      (changed fixed panel bottom from 0 to calc(--nav-h + --safe-b))
+
   v1.4.0 (2026-06-14)
     - OCR now pre-fills manual entry form (date, place, category, items) instead of jumping to Review
     - User can review, edit, add, delete items before proceeding
@@ -211,6 +219,7 @@ textarea { resize: none; }
 const CONFIG = {
   geminiApiKey: '',         // Fetched from Config tab in Google Sheet on load
   googleSheetUrl: 'https://script.google.com/macros/s/AKfycbz_rQoPkoHaqa0nT5RIjHRfjMN34VRvwL-VKXvJsTaBqz5cSVN14N-fAJh98ATGNUqpaA/exec',
+  googleSheetEditUrl: 'https://docs.google.com/spreadsheets/d/1lwtr9H-Gg1QaDUTpxW7uiT_3nmaXlEQ6ExJa2Sg5b2c/edit',
   personA: '',
   personB: '',
   currency: 'THB',
@@ -382,7 +391,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.4.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.4.2</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -555,7 +564,7 @@ const CONFIG = {
     </div>
 
     <!-- Per-person totals (sticky bottom) -->
-    <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:var(--card);border-top:0.5px solid var(--border);padding:10px 14px calc(10px + var(--safe-b));z-index:10;">
+    <div style="position:fixed;bottom:calc(var(--nav-h) + var(--safe-b));left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:var(--card);border-top:0.5px solid var(--border);padding:10px 14px;z-index:20;">
       <div style="display:flex;gap:10px;margin-bottom:10px;">
         <div style="flex:1;background:var(--acc-light);border-radius:10px;padding:8px 10px;">
           <div style="font-size:10px;color:var(--acc-text);margin-bottom:2px;" id="rv-a-name">A</div>
@@ -951,8 +960,9 @@ function saveName(person) {
 }
 
 function openGSheet() {
-  if (CONFIG.googleSheetUrl) window.open(CONFIG.googleSheetUrl, '_blank');
-  else alert('No Google Sheet URL configured. Add it to CONFIG.googleSheetUrl in the HTML file.');
+  const url = CONFIG.googleSheetEditUrl || CONFIG.googleSheetUrl;
+  if (url) window.open(url, '_blank');
+  else alert('No Google Sheet URL configured.');
 }
 
 // ── CURRENCY SHEET ────────────────────────────────────
