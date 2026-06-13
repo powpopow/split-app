@@ -2,6 +2,18 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.4.0 (2026-06-14)
+    - OCR now pre-fills manual entry form (date, place, category, items) instead of jumping to Review
+    - User can review, edit, add, delete items before proceeding
+    - Who paid selection now always available before Review
+    - Empty OCR result lands on manual form for user to complete
+
+  v1.3.1 (2026-06-14)
+    - Scan screen: cycling status messages with timing
+    - Auto-retry with next model on failure, shown inline (no abrupt error)
+    - "Keep this page open" warning during scan
+    - Error shown to user only if all models fail
+
   v1.3.0 (2026-06-14)
     - Dynamic Gemini model selection with automatic fallback
     - On load: fetches available models, picks newest Flash, falls back if unavailable
@@ -370,7 +382,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.3.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.4.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -629,7 +641,8 @@ const CONFIG = {
 <div class="scan-overlay" id="scan-overlay">
   <div class="scan-spinner"></div>
   <div style="font-size:15px; font-weight:500;">Reading receipt…</div>
-  <div class="scan-step" id="scan-step">Uploading photo</div>
+  <div class="scan-step" id="scan-step">Uploading photo…</div>
+  <div style="font-size:11px; color:var(--text3); margin-top:8px; text-align:center; padding:0 32px;">Please keep this page open</div>
 </div>
 
 <!-- Custom split sheet -->
@@ -1021,54 +1034,128 @@ function removeManualItem(i) { manualItems.splice(i, 1); renderManualItems(); }
 
 function triggerPhotoUpload() { document.getElementById('photo-input').click(); }
 
+// Scan message cycling
+const SCAN_MESSAGES = [
+  'Uploading photo…',
+  'Reading items & prices…',
+  'Extracting charges & totals…',
+  'Almost done…',
+];
+let scanMsgTimer = null;
+
+function startScanMessages(stepEl) {
+  let idx = 0;
+  stepEl.textContent = SCAN_MESSAGES[idx];
+  scanMsgTimer = setInterval(() => {
+    idx = (idx + 1) % SCAN_MESSAGES.length;
+    stepEl.textContent = SCAN_MESSAGES[idx];
+  }, 5000);
+}
+
+function stopScanMessages() {
+  if (scanMsgTimer) { clearInterval(scanMsgTimer); scanMsgTimer = null; }
+}
+
 async function handlePhotoUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Show scan overlay
   const overlay = document.getElementById('scan-overlay');
   const stepEl = document.getElementById('scan-step');
   overlay.classList.add('open');
-  stepEl.textContent = 'Uploading photo…';
+
+  if (!CONFIG.geminiApiKey) {
+    overlay.classList.remove('open');
+    alert('No Gemini API key found. Check Settings → About → Receipt OCR.');
+    event.target.value = '';
+    return;
+  }
 
   try {
+    startScanMessages(stepEl);
     const base64 = await fileToBase64(file);
-    stepEl.textContent = 'Reading items & prices…';
 
-    if (!CONFIG.geminiApiKey) {
+    // Build fallback model list: current best first, then others
+    const modelQueue = [geminiModel, 'gemini-2.5-flash', 'gemini-2.0-flash']
+      .filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
+
+    let result = null;
+    let lastErr = null;
+
+    for (let i = 0; i < modelQueue.length; i++) {
+      const model = modelQueue[i];
+      if (i > 0) {
+        stopScanMessages();
+        stepEl.textContent = `Having trouble, trying a different model…`;
+        await new Promise(r => setTimeout(r, 1500));
+        startScanMessages(stepEl);
+      }
+      try {
+        result = await callGeminiOCR(base64, file.type, model);
+        geminiModel = model; // update active model
+        break;
+      } catch(err) {
+        lastErr = err;
+        console.warn(`Model ${model} failed:`, err.message);
+      }
+    }
+
+    stopScanMessages();
+
+    if (!result) {
       overlay.classList.remove('open');
-      alert('No Gemini API key configured. Please add your key to CONFIG.geminiApiKey in the HTML file.');
+      if (lastErr?.message === 'RATE_LIMIT') {
+        alert('Too many requests. Please wait a moment and try again, or use manual entry.');
+      } else if (lastErr?.message === 'OVERLOADED') {
+        alert('Gemini is busy right now. Please try again in a moment, or use manual entry.');
+      } else {
+        alert('Could not read receipt after multiple attempts. Please use manual entry.');
+      }
+      event.target.value = '';
       return;
     }
 
-    const result = await callGeminiOCR(base64, file.type);
-    stepEl.textContent = 'Finalising…';
-
-    // Populate currentBill from OCR result
-    currentBill = {
-      id: Date.now().toString(),
-      date: result.date || new Date().toISOString().split('T')[0],
-      place: result.merchant || '',
-      category: result.category || '',
-      items: (result.items || []).map(it => ({ name: it.name, qty: it.qty || 1, price: it.unit_price || 0, assignment: 'shared', splitA: 50, splitB: 50 })),
-      charges: { sc: result.service_charge_percent > 0, scPct: result.service_charge_percent || 10, vat: result.vat_percent > 0, vatPct: result.vat_percent || 7, disc: false, discAmt: 0, voucher: false, voucherAmt: 0 },
-      paidBy: 'a',
-    };
-
+    stepEl.textContent = 'Done!';
     overlay.classList.remove('open');
-    goToReview('ocr');
+    prefillManualFromOCR(result);
   } catch (err) {
+    stopScanMessages();
     overlay.classList.remove('open');
     console.error(err);
-    if (err.message === 'RATE_LIMIT') {
-      alert('Too many requests. Please wait a moment and try again, or use manual entry.');
-    } else if (err.message === 'OVERLOADED') {
-      alert('Gemini is busy right now. Please try again in a moment, or use manual entry.');
-    } else {
-      alert('Could not read receipt. Please try again or use manual entry.');
-    }
+    alert('Could not read receipt. Please use manual entry.');
   }
   event.target.value = '';
+}
+
+function prefillManualFromOCR(result) {
+  // Reset who paid
+  whoPaidManual = 'a';
+  setWhoPaid('manual', 'a');
+
+  // Fill in date, place, category
+  const dateEl = document.getElementById('bill-date');
+  const placeEl = document.getElementById('bill-place');
+  const catEl = document.getElementById('bill-category');
+  if (dateEl && result.date) dateEl.value = result.date;
+  if (placeEl && result.merchant) placeEl.value = result.merchant;
+  if (catEl && result.category) catEl.value = result.category;
+
+  // Populate items
+  manualItems = (result.items || []).map(it => ({
+    name: it.name || '',
+    price: it.unit_price || 0,
+  }));
+  if (manualItems.length === 0) manualItems = [{ name: '', price: '' }];
+  renderManualItems();
+
+  // Show manual entry tab and navigate to new bill screen
+  switchBillTab('manual');
+  goTo('newbill');
+
+  // If no items found, show a toast/hint
+  if ((result.items || []).length === 0) {
+    setTimeout(() => alert('No items found on receipt. Please fill in manually.'), 300);
+  }
 }
 
 function fileToBase64(file) {
@@ -1080,7 +1167,7 @@ function fileToBase64(file) {
   });
 }
 
-async function callGeminiOCR(base64, mimeType) {
+async function callGeminiOCR(base64, mimeType, model = geminiModel) {
   const prompt = `Read this receipt and return ONLY valid JSON (no markdown) with these fields:
 {
   "date": "YYYY-MM-DD",
@@ -1093,7 +1180,7 @@ async function callGeminiOCR(base64, mimeType) {
   "total": 0
 }`;
 
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${CONFIG.geminiApiKey}`, {
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
