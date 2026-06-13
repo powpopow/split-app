@@ -2,6 +2,14 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.3.0 (2026-06-14)
+    - Dynamic Gemini model selection with automatic fallback
+    - On load: fetches available models, picks newest Flash, falls back if unavailable
+    - No manual model maintenance needed
+
+  v1.2.1 (2026-06-14)
+    - Fixed: updated Gemini model from retired gemini-2.0-flash to gemini-2.5-flash
+
   v1.2.0 (2026-06-14)
     - Sheet URL hardcoded in CONFIG (not a secret)
     - Gemini API key fetched from Config tab in Google Sheet on app load
@@ -362,7 +370,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.2.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.3.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -907,7 +915,7 @@ function updateSettingsUI() {
   document.getElementById('currency-val').innerHTML = CONFIG.currency + ' ' + CONFIG.currencySymbol + ' <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;opacity:0.5;vertical-align:-2px;"><polyline points="9 18 15 12 9 6"/></svg>';
   const hasGemini = CONFIG.geminiApiKey && CONFIG.geminiApiKey.length > 5;
   const ocrEl = document.getElementById('ocr-status');
-  if (ocrEl) ocrEl.innerHTML = hasGemini ? '<span class="badge badge-acc">Gemini AI ✓</span>' : '<span class="badge badge-red">Not loaded</span>';
+  if (ocrEl) ocrEl.innerHTML = hasGemini ? `<span class="badge badge-acc">${geminiModel} ✓</span>` : '<span class="badge badge-red">Not loaded</span>';
 }
 
 function editName(person) {
@@ -1052,7 +1060,13 @@ async function handlePhotoUpload(event) {
   } catch (err) {
     overlay.classList.remove('open');
     console.error(err);
-    alert('Could not read receipt. Please check your Gemini API key or use manual entry.');
+    if (err.message === 'RATE_LIMIT') {
+      alert('Too many requests. Please wait a moment and try again, or use manual entry.');
+    } else if (err.message === 'OVERLOADED') {
+      alert('Gemini is busy right now. Please try again in a moment, or use manual entry.');
+    } else {
+      alert('Could not read receipt. Please try again or use manual entry.');
+    }
   }
   event.target.value = '';
 }
@@ -1079,7 +1093,7 @@ async function callGeminiOCR(base64, mimeType) {
   "total": 0
 }`;
 
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.geminiApiKey}`, {
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${CONFIG.geminiApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1087,7 +1101,13 @@ async function callGeminiOCR(base64, mimeType) {
     })
   });
 
-  if (!resp.ok) throw new Error('Gemini API error: ' + resp.status);
+  if (!resp.ok) {
+    const errData = await resp.json().catch(() => ({}));
+    const code = errData?.error?.code || resp.status;
+    if (code === 429) throw new Error('RATE_LIMIT');
+    if (code === 503) throw new Error('OVERLOADED');
+    throw new Error('Gemini API error: ' + code);
+  }
   const data = await resp.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
   const clean = text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
@@ -1501,6 +1521,55 @@ function renderSummary() {
     (aPaid > bPaid ? nameA : nameB) + ' paid ' + fmt(diff) + ' more';
 }
 
+// ── DYNAMIC GEMINI MODEL SELECTION ───────────────────
+let geminiModel = 'gemini-2.5-flash'; // default fallback
+
+async function fetchBestGeminiModel() {
+  if (!CONFIG.geminiApiKey) return;
+  try {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${CONFIG.geminiApiKey}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    // Filter flash models that support generateContent
+    const flashModels = (data.models || [])
+      .filter(m =>
+        m.name.toLowerCase().includes('flash') &&
+        (m.supportedGenerationMethods || []).includes('generateContent') &&
+        !m.name.toLowerCase().includes('lite') // prefer full flash over lite
+      )
+      .map(m => m.name.replace('models/', ''))
+      .sort((a, b) => {
+        // Sort by version number descending (e.g. gemini-3.5 > gemini-2.5)
+        const verA = parseFloat(a.match(/(\d+\.\d+)/)?.[1] || '0');
+        const verB = parseFloat(b.match(/(\d+\.\d+)/)?.[1] || '0');
+        return verB - verA;
+      });
+
+    if (!flashModels.length) return;
+
+    // Try each model until one responds successfully
+    for (const model of flashModels) {
+      try {
+        const testResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] })
+        });
+        if (testResp.ok || testResp.status === 400) {
+          // 400 means model works but bad input — that's fine, model is available
+          geminiModel = model;
+          console.log('Using Gemini model:', geminiModel);
+          updateSettingsUI();
+          return;
+        }
+      } catch(e) { /* try next */ }
+    }
+  } catch(e) {
+    console.warn('Could not fetch Gemini models, using default:', geminiModel);
+  }
+}
+
 // ── FETCH GEMINI KEY FROM CONFIG TAB ─────────────────
 async function fetchConfigFromSheet() {
   if (!CONFIG.googleSheetUrl) return;
@@ -1552,8 +1621,11 @@ window.addEventListener('DOMContentLoaded', () => {
   initManualItems();
   updateWhoPayNames();
   ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
-  // Fetch Gemini key from Config tab, then sync bills
-  fetchConfigFromSheet().then(() => syncFromSheets());
+  // Fetch config → best Gemini model → sync bills
+  fetchConfigFromSheet().then(() => {
+    fetchBestGeminiModel();
+    syncFromSheets();
+  });
 });
 </script>
 
