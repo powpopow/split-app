@@ -1,3 +1,23 @@
+<!--
+  SplitApp — Personal expense splitter
+  ════════════════════════════════════════
+  CHANGELOG
+  v1.1.0 (2026-06-14)
+    - Removed hardcoded API keys from source code
+    - API key and Sheet URL now entered via Settings → Integrations, stored in localStorage
+    - App now syncs from Google Sheets on load (Sheets = source of truth)
+    - Added version changelog block
+
+  v1.0.0 (2026-06-14)
+    - Initial release
+    - Dashboard, History, Summary, Settings screens
+    - New Bill flow: Capture (OCR + manual), Review & Assign, Confirm & Save
+    - Gemini Vision OCR for receipt scanning
+    - Google Sheets sync
+    - Running balance ledger
+    - Per-item assignment with custom split %
+    - Service charge, VAT, discount, cash voucher charge pipeline
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -354,7 +374,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.0.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.1.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
