@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.3 (2026-06-14)
+    - Fix #18: "Please keep this page open" on scan overlay now larger (17px bold) than "Reading receipt..."
+    - Fix #19: date input now styled consistently with other form fields (added input[type=date] to CSS rule)
+    - Fix #20: review screen padding-bottom increased to 240px — charges no longer hidden behind fixed totals panel
+    - Fix #21: removed duplicate restaurant name from bill detail content (already shown in page header)
+    - Fix #9: fmtDate() now handles ISO datetime strings from Sheets; syncFromSheets normalises date to YYYY-MM-DD
   v1.8.2 (2026-06-14)
     - Fix #13/#15: Bill detail is now a full page (screen-bill-detail) with ← History back button, replacing bottom sheet
     - Delete navigates cleanly back to History (no DOM layout issues)
@@ -187,7 +193,7 @@ body {
 .toggle.on::after { left:18px; }
 
 /* Input */
-input[type=text], input[type=number], textarea, select {
+input[type=text], input[type=number], input[type=date], textarea, select {
   border: 0.5px solid var(--border); border-radius: 10px; padding: 10px 12px;
   font-size: 14px; width: 100%; background: var(--card); color: var(--text);
   font-family: inherit; outline: none;
@@ -483,7 +489,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.3</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -570,7 +576,7 @@ const CONFIG = {
   </div>
 
   <!-- NEW BILL: STEP 2 — REVIEW & ASSIGN -->
-  <div id="screen-review" class="screen" style="padding-bottom:80px;">
+  <div id="screen-review" class="screen" style="padding-bottom:240px;">
     <div class="page-header">
       <div class="back-btn" onclick="goTo('newbill')">
         <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
@@ -744,7 +750,7 @@ const CONFIG = {
   <div class="scan-spinner"></div>
   <div style="font-size:15px; font-weight:500;">Reading receipt…</div>
   <div class="scan-step" id="scan-step">Uploading photo…</div>
-  <div style="font-size:11px; color:var(--text3); margin-top:8px; text-align:center; padding:0 32px;">Please keep this page open</div>
+  <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; padding:0 32px;">Please keep this page open</div>
 </div>
 
 <!-- Custom split sheet -->
@@ -965,7 +971,14 @@ function editBill(id) {
 
 function fmtDate(d) {
   if (!d) return '—';
-  const dt = new Date(d + 'T00:00:00');
+  const s = String(d).trim();
+  let dt;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    dt = new Date(s + 'T00:00:00'); // plain YYYY-MM-DD — append time to avoid UTC shift
+  } else {
+    dt = new Date(s); // ISO with time, locale string, etc.
+  }
+  if (isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
 }
 
@@ -994,8 +1007,7 @@ function showBillDetail(id) {
   document.getElementById('bill-detail-title').textContent = b.place || 'Bill detail';
   document.getElementById('bill-detail-content').innerHTML = `
     <div style="margin:8px 0 16px;">
-      <div style="font-size:15px;font-weight:600;">${b.place || 'Unknown'}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px;">${fmtDate(b.date)} · Paid by ${paidBy}</div>
+      <div style="font-size:12px;color:var(--text3);">${fmtDate(b.date)} · Paid by ${paidBy}</div>
     </div>
     <div class="sec-label">Items</div>
     <div class="card" style="margin-top:0;">${itemsHTML}</div>
@@ -1944,7 +1956,7 @@ async function syncFromSheets() {
     // Rebuild state from sheets (sheets is source of truth)
     state.bills = data.bills.map(r => ({
       id: String(r.ID || r.id || Date.now()),
-      date: r.Date || r.date || '',
+      date: (() => { const raw = String(r.Date || r.date || '').trim(); if (!raw) return ''; const dt = new Date(raw); return isNaN(dt.getTime()) ? raw : dt.toISOString().split('T')[0]; })(),
       place: r.Place || r.place || '',
       category: r.Category || r.category || '',
       paidBy: (r['Paid By'] || r.paidBy || '') === (CONFIG.personA || 'A') ? 'a' : 'b',
