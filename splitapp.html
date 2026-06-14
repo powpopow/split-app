@@ -2,7 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.9.0 (2026-06-14)
+    - Bug #23: Home avatars now stack (current user on top). Tap back avatar to switch perspective instantly — no sign-out required. Balance, greeting, and item order all flip to the other person's POV.
   v1.8.9 (2026-06-14)
+    - Feature #11: Grand total row added to Review screen Charges card
+    - OCR receipt total stored and compared to calculated total (shows ✓ or ⚠ with ฿1 tolerance)
+  v1.8.8 (2026-06-14)
     - Rename "50/50" to "Shared" throughout (chip, dropdown, bill detail)
   v1.8.7 (2026-06-14)
     - Fix: dropdown dot colors now match chip colors (Powpow = teal, Pat = orange-brown)
@@ -919,10 +924,17 @@ function renderHome() {
   const myAvatarClass = currentUser === 'b' ? 'av-b' : 'av-a';
   document.getElementById('home-greeting').textContent = 'Hi, ' + myName;
 
-  // Avatars
+  // Avatars — stacked, current user on top, other tappable to switch perspective
+  const meAv = currentUser === 'b' ? 'av-b' : 'av-a';
+  const meInit = currentUser === 'b' ? 'PP' : 'CJ';
+  const otherAv = currentUser === 'b' ? 'av-a' : 'av-b';
+  const otherInit = currentUser === 'b' ? 'CJ' : 'PP';
+  const otherWho = currentUser === 'b' ? 'a' : 'b';
   document.getElementById('home-avatars').innerHTML =
-    `<div class="avatar av-a">CJ</div>
-     <div class="avatar av-b">PP</div>`;
+    `<div style="position:relative;width:54px;height:36px;display:inline-block;">
+       <div class="avatar ${otherAv}" style="position:absolute;left:0;z-index:1;opacity:0.75;cursor:pointer;box-shadow:0 0 0 2px var(--bg);" onclick="switchPerspective('${otherWho}')" title="Switch to ${otherName}">${otherInit}</div>
+       <div class="avatar ${meAv}" style="position:absolute;right:0;z-index:2;box-shadow:0 0 0 2px var(--bg);">${meInit}</div>
+     </div>`;
 
   // Balance card — from current user's perspective
   // runningBalance > 0 means B owes A; < 0 means A owes B
@@ -2140,6 +2152,12 @@ function setCurrentUser(who) {
   currentUser = who;
   localStorage.setItem('splitapp_user', who);
   showApp();
+}
+
+function switchPerspective(who) {
+  currentUser = who;
+  localStorage.setItem('splitapp_user', who);
+  renderHome();
 }
 
 function showApp() {
