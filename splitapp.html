@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.5 (2026-06-14)
+    - Feature #12: Assignment chip split into cycle (left) + dropdown ▾ (right)
+    - Cycle order is now perspective-aware: current user's name comes first after 50/50
+    - Dropdown options: nameA / nameB / 50/50 / Custom % (opens existing custom split sheet)
+    - Custom % assignment now shows actual split ratio on chip (e.g. 70/30)
+    - Click outside closes dropdown
   v1.8.4 (2026-06-14)
     - Fix #17: Gemini model picker now excludes tts, embedding, aqa models — only vision-capable flash models considered
   v1.8.3 (2026-06-14)
@@ -181,6 +187,23 @@ body {
 .chip-a { background: var(--acc-light); color: var(--acc-text); }
 .chip-b { background: #FFF0E6; color: #a0623a; }
 .chip-shared { background: #f0f0f0; color: #555; }
+/* Split assignment chip */
+.assign-chip { display: inline-flex; align-items: center; border-radius: 12px; font-size: 12px; font-weight: 500; user-select: none; overflow: hidden; }
+.assign-chip .chip-cycle { padding: 4px 8px 4px 10px; cursor: pointer; }
+.assign-chip .chip-divider { width: 0.5px; align-self: stretch; opacity: 0.35; background: currentColor; }
+.assign-chip .chip-dd-btn { padding: 4px 8px 4px 6px; cursor: pointer; font-size: 10px; }
+.assign-chip.chip-a { background: var(--acc-light); color: var(--acc-text); }
+.assign-chip.chip-b { background: #FFF0E6; color: #a0623a; }
+.assign-chip.chip-shared { background: #f0f0f0; color: #555; }
+.assign-chip.chip-custom { background: #f5f0ff; color: #5340b0; }
+/* Assignment dropdown */
+.assign-dd-wrap { position: relative; display: inline-flex; align-items: center; }
+.assign-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 4px); background: var(--card); border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; z-index: 100; min-width: 130px; }
+.assign-dropdown.open { display: block; }
+.assign-dd-opt { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px; color: var(--text); cursor: pointer; border-bottom: 0.5px solid var(--border); }
+.assign-dd-opt:last-child { border-bottom: none; }
+.assign-dd-opt:active { background: var(--bg); }
+.assign-dd-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
 /* Badge */
 .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 8px; font-size: 11px; font-weight: 500; }
@@ -491,7 +514,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.4</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.5</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1481,28 +1504,66 @@ function renderReviewItems() {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
   document.getElementById('review-items').innerHTML = currentBill.items.map((it, i) => {
-    const chip = it.assignment === 'a' ? `<div class="chip chip-a" onclick="cycleAssign(${i})">${nameA}</div>`
-      : it.assignment === 'b' ? `<div class="chip chip-b" onclick="cycleAssign(${i})">${nameB}</div>`
-      : `<div class="chip chip-shared" onclick="cycleAssign(${i})">50/50</div>`;
+    let chipClass, chipLabel;
+    if (it.assignment === 'a') { chipClass = 'chip-a'; chipLabel = nameA; }
+    else if (it.assignment === 'b') { chipClass = 'chip-b'; chipLabel = nameB; }
+    else if (it.assignment === 'custom') { chipClass = 'chip-custom'; chipLabel = (it.splitA||50)+'/'+(it.splitB||50); }
+    else { chipClass = 'chip-shared'; chipLabel = '50/50'; }
     return `<div class="card-row" style="gap:8px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
         <div style="font-size:11px;color:var(--text3);">${fmt(it.price * it.qty)}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        ${chip}
-        <div onclick="openCustomSplit(${i})" style="color:var(--text3);font-size:13px;cursor:pointer;padding:2px 4px;">···</div>
+      <div class="assign-dd-wrap">
+        <div class="assign-chip ${chipClass}">
+          <div class="chip-cycle" onclick="cycleAssign(${i})">${chipLabel}</div>
+          <div class="chip-divider"></div>
+          <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)">▾</div>
+        </div>
+        <div class="assign-dropdown" id="assign-dd-${i}">
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:#2E3250;"></div>${nameA}</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameB}</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>50/50</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom %</div>
+        </div>
       </div>
     </div>`;
   }).join('');
 }
 
 function cycleAssign(i) {
-  const order = ['shared', 'a', 'b'];
+  // Perspective-aware order: current user's name comes first after 50/50
+  const order = currentUser === 'b' ? ['shared', 'b', 'a'] : ['shared', 'a', 'b'];
   const cur = currentBill.items[i].assignment;
-  const next = order[(order.indexOf(cur) + 1) % order.length];
+  const idx = order.indexOf(cur === 'custom' ? 'shared' : cur);
+  const next = order[(idx + 1) % order.length];
   currentBill.items[i].assignment = next;
   if (next === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
+  renderReviewItems();
+  recalc();
+}
+
+let _openDdIdx = null;
+function toggleAssignDropdown(i, e) {
+  e.stopPropagation();
+  const dd = document.getElementById('assign-dd-' + i);
+  if (!dd) return;
+  const isOpen = dd.classList.contains('open');
+  closeAllAssignDropdowns();
+  if (!isOpen) { dd.classList.add('open'); _openDdIdx = i; }
+}
+function closeAllAssignDropdowns() {
+  if (_openDdIdx !== null) {
+    const el = document.getElementById('assign-dd-' + _openDdIdx);
+    if (el) el.classList.remove('open');
+    _openDdIdx = null;
+  }
+}
+function setAssignDirect(i, val) {
+  closeAllAssignDropdowns();
+  if (val === 'custom') { openCustomSplit(i); return; }
+  currentBill.items[i].assignment = val;
+  if (val === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
   renderReviewItems();
   recalc();
 }
@@ -2101,6 +2162,8 @@ window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentUser) syncFromSheets();
   });
+  // Close assignment dropdowns on tap outside
+  document.addEventListener('click', () => closeAllAssignDropdowns());
 });
 </script>
 
