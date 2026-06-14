@@ -2,12 +2,17 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.8 (2026-06-14)
+    - Rename "50/50" to "Shared" throughout (chip, dropdown, bill detail)
+  v1.8.7 (2026-06-14)
+    - Fix: dropdown dot colors now match chip colors (Powpow = teal, Pat = orange-brown)
+    - Fix: Review screen subtitle updated to "▾ for more options" (was "··· for custom %")
   v1.8.6 (2026-06-14)
     - Fix #24: Edit bill now correctly navigates to newbill screen (was goTo('entry') → screen not found → blank page)
   v1.8.5 (2026-06-14)
     - Feature #12: Assignment chip split into cycle (left) + dropdown ▾ (right)
-    - Cycle order is now perspective-aware: current user's name comes first after 50/50
-    - Dropdown options: nameA / nameB / 50/50 / Custom % (opens existing custom split sheet)
+    - Cycle order is now perspective-aware: current user's name comes first after Shared
+    - Dropdown options: nameA / nameB / Shared / Custom % (opens existing custom split sheet)
     - Custom % assignment now shows actual split ratio on chip (e.g. 70/30)
     - Click outside closes dropdown
   v1.8.4 (2026-06-14)
@@ -516,7 +521,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.6</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.8</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -610,7 +615,7 @@ const CONFIG = {
         Back
       </div>
       <div class="page-title">Review & assign</div>
-      <div style="font-size:12px; color:var(--text3); margin-top:2px;">Tap chip to cycle · ··· for custom %</div>
+      <div style="font-size:12px; color:var(--text3); margin-top:2px;">Tap chip to cycle · ▾ for more options</div>
     </div>
 
     <!-- Bill meta -->
@@ -1021,7 +1026,7 @@ function showBillDetail(id) {
     itemsHTML = b.items.map(it => {
       const assign = it.assignment === 'a' ? `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`
         : it.assignment === 'b' ? `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`
-        : `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">50/50</span>`;
+        : `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">Shared</span>`;
       return `<div class="card-row">
         <div style="flex:1;min-width:0;font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
         <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(it.price * (it.qty||1))}</span></div>
@@ -1510,7 +1515,7 @@ function renderReviewItems() {
     if (it.assignment === 'a') { chipClass = 'chip-a'; chipLabel = nameA; }
     else if (it.assignment === 'b') { chipClass = 'chip-b'; chipLabel = nameB; }
     else if (it.assignment === 'custom') { chipClass = 'chip-custom'; chipLabel = (it.splitA||50)+'/'+(it.splitB||50); }
-    else { chipClass = 'chip-shared'; chipLabel = '50/50'; }
+    else { chipClass = 'chip-shared'; chipLabel = 'Shared'; }
     return `<div class="card-row" style="gap:8px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
@@ -1523,9 +1528,9 @@ function renderReviewItems() {
           <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)">▾</div>
         </div>
         <div class="assign-dropdown" id="assign-dd-${i}">
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:#2E3250;"></div>${nameA}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameB}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>50/50</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom %</div>
         </div>
       </div>
@@ -1534,7 +1539,7 @@ function renderReviewItems() {
 }
 
 function cycleAssign(i) {
-  // Perspective-aware order: current user's name comes first after 50/50
+  // Perspective-aware order: current user's name comes first after Shared
   const order = currentUser === 'b' ? ['shared', 'b', 'a'] : ['shared', 'a', 'b'];
   const cur = currentBill.items[i].assignment;
   const idx = order.indexOf(cur === 'custom' ? 'shared' : cur);
