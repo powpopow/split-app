@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.6.1 (2026-06-14)
+    - Settings now shows Backend version (fetched from Apps Script on load)
+
   v1.6.0 (2026-06-14)
     - Settings (person names, currency) now sync to Google Sheets Config tab
     - All devices load the same names and currency on startup via fetchConfigFromSheet
@@ -400,7 +403,8 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.1</div></div>
+      <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -1707,6 +1711,10 @@ async function fetchConfigFromSheet() {
       if (c.person_b)         CONFIG.personB        = c.person_b;
       if (c.currency)         CONFIG.currency       = c.currency;
       if (c.currency_symbol)  CONFIG.currencySymbol = c.currency_symbol;
+      if (c.gs_version) {
+        const el = document.getElementById('gs-version-val');
+        if (el) el.textContent = c.gs_version;
+      }
       updateSettingsUI();
     }
   } catch(e) {
