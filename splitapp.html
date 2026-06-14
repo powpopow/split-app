@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.1 (2026-06-14)
+    - Fix #14: edit button now correctly calls switchBillTab('manual') instead of missing showTab()
+    - Fix #16: updateWhoPayNames() now called inside updateSettingsUI() so Who Paid buttons stay current after config loads
   v1.8.0 (2026-06-14)
     - Bug #8: items_json stored in Sheets on save, parsed on sync
     - Bug #7: History rows tappable — detail sheet shows items, totals, paid by
@@ -468,7 +471,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.1</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -945,7 +948,7 @@ function editBill(id) {
 
   // Switch to manual entry tab and navigate
   goTo('entry');
-  showTab('manual');
+  switchBillTab('manual');
 }
 
 function fmtDate(d) {
@@ -1129,6 +1132,7 @@ function updateSettingsUI() {
     const myName = currentUser === 'a' ? (CONFIG.personA || 'Person A') : currentUser === 'b' ? (CONFIG.personB || 'Person B') : '—';
     signedInEl.textContent = myName;
   }
+  updateWhoPayNames();
 }
 
 function editName(person) {
