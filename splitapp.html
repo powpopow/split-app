@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.2 (2026-06-14)
+    - Fix #13/#15: Bill detail is now a full page (screen-bill-detail) with ← History back button, replacing bottom sheet
+    - Delete navigates cleanly back to History (no DOM layout issues)
   v1.8.1 (2026-06-14)
     - Fix #14: edit button now correctly calls switchBillTab('manual') instead of missing showTab()
     - Fix #16: updateWhoPayNames() now called inside updateSettingsUI() so Who Paid buttons stay current after config loads
@@ -362,6 +365,15 @@ const CONFIG = {
     <div id="history-list"></div>
   </div>
 
+  <!-- BILL DETAIL -->
+  <div id="screen-bill-detail" class="screen">
+    <div class="page-header">
+      <div class="back-btn" onclick="goTo('history')">← History</div>
+      <div class="page-title" id="bill-detail-title"></div>
+    </div>
+    <div id="bill-detail-content" style="padding:0 12px 24px;"></div>
+  </div>
+
   <!-- SUMMARY -->
   <div id="screen-summary" class="screen">
     <div class="page-header"><div class="page-title">Summary</div></div>
@@ -471,7 +483,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.1</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.2</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -979,8 +991,9 @@ function showBillDetail(id) {
     itemsHTML = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>`;
   }
 
-  openSheet('info', b.place || 'Bill detail', `
-    <div style="margin-bottom:14px;">
+  document.getElementById('bill-detail-title').textContent = b.place || 'Bill detail';
+  document.getElementById('bill-detail-content').innerHTML = `
+    <div style="margin:8px 0 16px;">
       <div style="font-size:15px;font-weight:600;">${b.place || 'Unknown'}</div>
       <div style="font-size:12px;color:var(--text3);margin-top:2px;">${fmtDate(b.date)} · Paid by ${paidBy}</div>
     </div>
@@ -992,15 +1005,16 @@ function showBillDetail(id) {
       <div class="card-row"><span>${nameB}</span><span style="font-weight:500;">${fmt(b.shareB)}</span></div>
       <div class="card-row" style="font-weight:600;border-top:1px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:16px;">
-      <button onclick="editBill('${id}');closeSheet();" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--acc);background:transparent;color:var(--acc);font-size:14px;font-weight:600;cursor:pointer;">Edit</button>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button onclick="editBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--acc);background:transparent;color:var(--acc);font-size:14px;font-weight:600;cursor:pointer;">Edit</button>
       <button onclick="confirmDeleteBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--red);color:white;font-size:14px;font-weight:600;cursor:pointer;">Delete</button>
-    </div>`);
+    </div>`;
+
+  goTo('bill-detail');
 }
 
 function confirmDeleteBill(id) {
   if (!confirm('Delete this bill? This cannot be undone.')) return;
-  closeSheet();
   deleteBill(id);
 }
 
@@ -1012,8 +1026,7 @@ function deleteBill(id) {
   else state.runningBalance += b.shareA;
   state.bills.splice(idx, 1);
   saveToStorage();
-  renderHome();
-  if (document.getElementById('screen-history').classList.contains('active')) renderHistory();
+  goTo('history');
   callDeleteBill(id);
 }
 
