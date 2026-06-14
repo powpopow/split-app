@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.0 (2026-06-14)
+    - Bug #8: items_json stored in Sheets on save, parsed on sync
+    - Bug #7: History rows tappable — detail sheet shows items, totals, paid by
+    - Feature #7: Delete bill (calls Sheets API), Edit bill (pre-fills form, updates row)
   v1.7.2 (2026-06-14)
     - Avatar icons: hardcoded CJ (navy) and PP (teal) replacing letter initials
   v1.7.1 (2026-06-14)
@@ -464,7 +468,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.7.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.0</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -773,6 +777,7 @@ let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
 let historyFilter = 'all';
 let whoPaidManual = 'a';
+let editingBillId = null;
 
 // ── INIT ─────────────────────────────────────────────
 function init() {
@@ -892,7 +897,6 @@ function renderHome() {
     return;
   }
   list.innerHTML = recent.map(b => billRowHTML(b)).join('');
-  attachLongPress();
 }
 
 function billRowHTML(b) {
@@ -907,7 +911,7 @@ function billRowHTML(b) {
   const positive = myNet > 0;
   const catClass = { food:'cat-food', shop:'cat-shop', cafe:'cat-cafe', transport:'cat-transport' }[b.category] || 'cat-other';
   const catEmoji = { food:'🍜', shop:'🛒', cafe:'☕', transport:'🚗', '':'📋' }[b.category] || '📋';
-  return `<div class="card-row del-row" data-id="${b.id}">
+  return `<div class="card-row" style="cursor:pointer;" onclick="showBillDetail('${b.id}')">
     <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
       <div class="cat-icon ${catClass}">${catEmoji}</div>
       <div style="min-width:0;">
@@ -919,8 +923,29 @@ function billRowHTML(b) {
       <div class="${positive ? 'amt-grn' : 'amt-red'}">${positive ? '+' : '-'}${fmt(Math.abs(myNet))}</div>
       <div style="font-size:10px;color:var(--text3);">${positive ? 'get back' : 'pay ' + otherName}</div>
     </div>
-    <div class="del-action" onclick="deleteBill('${b.id}')">Delete</div>
   </div>`;
+}
+
+function editBill(id) {
+  const b = state.bills.find(b => b.id === id);
+  if (!b) return;
+  editingBillId = id;
+
+  // Pre-fill form fields
+  document.getElementById('bill-date').value = b.date || '';
+  document.getElementById('bill-place').value = b.place || '';
+  document.getElementById('bill-category').value = b.category || '';
+  setWhoPaid('manual', b.paidBy || 'a');
+
+  // Pre-fill items
+  manualItems = (b.items && b.items.length)
+    ? b.items.map(it => ({ name: it.name || '', price: String(it.price || '') }))
+    : [{ name: '', price: '' }];
+  renderManualItems();
+
+  // Switch to manual entry tab and navigate
+  goTo('entry');
+  showTab('manual');
 }
 
 function fmtDate(d) {
@@ -929,25 +954,96 @@ function fmtDate(d) {
   return dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
 }
 
-function attachLongPress() {
-  document.querySelectorAll('.del-row').forEach(row => {
-    let timer;
-    row.addEventListener('touchstart', () => { timer = setTimeout(() => row.classList.toggle('swiped'), 500); }, { passive: true });
-    row.addEventListener('touchend', () => clearTimeout(timer), { passive: true });
-  });
+function showBillDetail(id) {
+  const b = state.bills.find(b => b.id === id);
+  if (!b) return;
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const paidBy = b.paidBy === 'a' ? nameA : nameB;
+
+  let itemsHTML = '';
+  if (b.items && b.items.length) {
+    itemsHTML = b.items.map(it => {
+      const assign = it.assignment === 'a' ? `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`
+        : it.assignment === 'b' ? `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`
+        : `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">50/50</span>`;
+      return `<div class="card-row">
+        <div style="flex:1;min-width:0;font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
+        <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(it.price * (it.qty||1))}</span></div>
+      </div>`;
+    }).join('');
+  } else {
+    itemsHTML = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>`;
+  }
+
+  openSheet('info', b.place || 'Bill detail', `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:600;">${b.place || 'Unknown'}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px;">${fmtDate(b.date)} · Paid by ${paidBy}</div>
+    </div>
+    <div class="sec-label">Items</div>
+    <div class="card" style="margin-top:0;">${itemsHTML}</div>
+    <div class="sec-label">Totals</div>
+    <div class="card" style="margin-top:0;">
+      <div class="card-row"><span>${nameA}</span><span style="font-weight:500;">${fmt(b.shareA)}</span></div>
+      <div class="card-row"><span>${nameB}</span><span style="font-weight:500;">${fmt(b.shareB)}</span></div>
+      <div class="card-row" style="font-weight:600;border-top:1px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button onclick="editBill('${id}');closeSheet();" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--acc);background:transparent;color:var(--acc);font-size:14px;font-weight:600;cursor:pointer;">Edit</button>
+      <button onclick="confirmDeleteBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--red);color:white;font-size:14px;font-weight:600;cursor:pointer;">Delete</button>
+    </div>`);
+}
+
+function confirmDeleteBill(id) {
+  if (!confirm('Delete this bill? This cannot be undone.')) return;
+  closeSheet();
+  deleteBill(id);
 }
 
 function deleteBill(id) {
   const idx = state.bills.findIndex(b => b.id === id);
   if (idx < 0) return;
   const b = state.bills[idx];
-  // Reverse its effect on balance
   if (b.paidBy === 'a') state.runningBalance -= (b.grandTotal - b.shareA);
   else state.runningBalance += b.shareA;
   state.bills.splice(idx, 1);
   saveToStorage();
   renderHome();
   if (document.getElementById('screen-history').classList.contains('active')) renderHistory();
+  callDeleteBill(id);
+}
+
+async function callDeleteBill(id) {
+  if (!CONFIG.googleSheetUrl) return;
+  await fetch(CONFIG.googleSheetUrl, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ action: 'deleteBill', id }),
+  });
+}
+
+async function callUpdateBill(bill) {
+  if (!CONFIG.googleSheetUrl) return;
+  await fetch(CONFIG.googleSheetUrl, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({
+      action: 'updateBill',
+      bill: {
+        id: bill.id,
+        date: bill.date,
+        place: bill.place,
+        category: bill.category,
+        paidBy: bill.paidBy === 'a' ? (CONFIG.personA || 'A') : (CONFIG.personB || 'B'),
+        grandTotal: bill.grandTotal,
+        shareA: bill.shareA,
+        shareB: bill.shareB,
+        runningBalance: state.runningBalance,
+        items_json: JSON.stringify(bill.items || []),
+      }
+    }),
+  });
 }
 
 function showBreakdown() {
@@ -1014,7 +1110,6 @@ function renderHistory() {
         ${bs.map(b => billRowHTML(b)).join('')}
       </div>`;
   }).join('');
-  attachLongPress();
 }
 
 // ── SETTINGS ─────────────────────────────────────────
@@ -1541,8 +1636,9 @@ function goToConfirm() {
 
 async function saveBill() {
   const calc = currentBill._calc;
+  const isEditing = !!editingBillId;
   const bill = {
-    id: currentBill.id || Date.now().toString(),
+    id: editingBillId || currentBill.id || Date.now().toString(),
     date: currentBill.date,
     place: currentBill.place,
     category: currentBill.category,
@@ -1553,7 +1649,19 @@ async function saveBill() {
     items: currentBill.items,
   };
 
-  // Update running balance
+  if (isEditing) {
+    // Remove old bill and reverse its balance contribution
+    const oldIdx = state.bills.findIndex(b => b.id === bill.id);
+    if (oldIdx >= 0) {
+      const old = state.bills[oldIdx];
+      if (old.paidBy === 'a') state.runningBalance -= (old.grandTotal - old.shareA);
+      else state.runningBalance += old.shareA;
+      state.bills.splice(oldIdx, 1);
+    }
+    editingBillId = null;
+  }
+
+  // Add updated/new bill and update balance
   if (bill.paidBy === 'a') state.runningBalance += calc.shareB;
   else state.runningBalance -= calc.shareA;
 
@@ -1561,9 +1669,11 @@ async function saveBill() {
   saveToStorage();
 
   // Sync to Google Sheets then pull fresh data
-  syncToSheets(bill)
-    .then(() => syncFromSheets())
-    .catch(e => console.warn('Sheets sync failed:', e));
+  if (isEditing) {
+    callUpdateBill(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets update failed:', e));
+  } else {
+    syncToSheets(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets sync failed:', e));
+  }
 
   // Reset
   currentBill = {};
@@ -1592,6 +1702,7 @@ async function syncToSheets(bill) {
       shareA: bill.shareA,
       shareB: bill.shareB,
       runningBalance: state.runningBalance,
+      items_json: JSON.stringify(bill.items || []),
     }
   };
   await fetch(CONFIG.googleSheetUrl, {
@@ -1823,7 +1934,7 @@ async function syncFromSheets() {
       grandTotal: parseFloat(r['Grand Total'] || r.grandTotal) || 0,
       shareA: parseFloat(r['Share A'] || r.shareA) || 0,
       shareB: parseFloat(r['Share B'] || r.shareB) || 0,
-      items: [],
+      items: (() => { try { return JSON.parse(r.items_json || r['items_json'] || '[]'); } catch(e) { return []; } })(),
     }));
     // Recalculate running balance from all bills
     state.runningBalance = state.bills.reduce((bal, b) => {
