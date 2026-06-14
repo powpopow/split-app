@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.5.0 (2026-06-14)
+    - Cross-phone sync: sync from Sheets on foreground (visibilitychange)
+    - Cross-phone sync: sync from Sheets after saving a bill
+
   v1.4.2 (2026-06-14)
     - Fix: "Open Google Sheet" in Settings now opens the actual spreadsheet
       instead of the Apps Script endpoint URL
@@ -391,7 +395,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.4.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.5.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -1461,8 +1465,10 @@ async function saveBill() {
   state.bills.push(bill);
   saveToStorage();
 
-  // Sync to Google Sheets (fire and forget)
-  syncToSheets(bill).catch(e => console.warn('Sheets sync failed:', e));
+  // Sync to Google Sheets then pull fresh data
+  syncToSheets(bill)
+    .then(() => syncFromSheets())
+    .catch(e => console.warn('Sheets sync failed:', e));
 
   // Reset
   currentBill = {};
@@ -1722,6 +1728,11 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchConfigFromSheet().then(() => {
     fetchBestGeminiModel();
     syncFromSheets();
+  });
+
+  // Sync when app comes back to foreground
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncFromSheets();
   });
 });
 </script>
