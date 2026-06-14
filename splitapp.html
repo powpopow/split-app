@@ -3,7 +3,9 @@
   ════════════════════════════════════════
   CHANGELOG
   v1.9.0 (2026-06-14)
-    - Bug #23: Home avatars now stack (current user on top). Tap back avatar to switch perspective instantly — no sign-out required. Balance, greeting, and item order all flip to the other person's POV.
+    - Feature #15: Home avatars now stack (current user on top). Tap back avatar to switch perspective instantly — no sign-out required. Balance, greeting, and item order all flip to the other person's POV.
+    - PWA: added apple-mobile-web-app-capable meta tags so app hides Safari/Chrome browser UI when launched from home screen
+    - Fix: Settings app version now reads correctly (was hardcoded and missed bumps)
   v1.8.9 (2026-06-14)
     - Feature #11: Grand total row added to Review screen Charges card
     - OCR receipt total stored and compared to calculated total (shows ✓ or ⚠ with ฿1 tolerance)
@@ -124,6 +126,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SplitApp">
+<meta name="mobile-web-app-capable" content="yes">
 <title>SplitApp</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -526,7 +532,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.8</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.0</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
