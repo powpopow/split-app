@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.6 (2026-06-14)
+    - Fix #24: Edit bill now correctly navigates to newbill screen (was goTo('entry') → screen not found → blank page)
   v1.8.5 (2026-06-14)
     - Feature #12: Assignment chip split into cycle (left) + dropdown ▾ (right)
     - Cycle order is now perspective-aware: current user's name comes first after 50/50
@@ -514,7 +516,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.5</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.6</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -990,7 +992,7 @@ function editBill(id) {
   renderManualItems();
 
   // Switch to manual entry tab and navigate
-  goTo('entry');
+  goTo('newbill');
   switchBillTab('manual');
 }
 
