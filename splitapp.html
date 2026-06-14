@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.9.2 (2026-06-14)
+    - Fix #27: fmt() now shows 2 decimal places — prices like £2.50 no longer rounded to £3
+    - Fix #27: receipt comparison tolerance tightened to 0.02 (was 1.00)
+    - Fix #28: camera emoji replaced with minimal SVG icon on upload screen
   v1.9.1 (2026-06-14)
     - Fix #26: Bottom nav now clears iPhone home indicator in PWA/standalone mode
     - Added viewport-fit=cover to meta viewport; nav height now grows by safe-area-inset-bottom
@@ -535,7 +539,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.1</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.2</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -567,7 +571,7 @@ const CONFIG = {
     <!-- Upload tab -->
     <div id="panel-upload">
       <div onclick="triggerPhotoUpload()" style="margin:10px 12px; background:var(--card); border-radius:14px; border:1.5px dashed var(--border); padding:28px 16px; text-align:center; cursor:pointer;">
-        <div style="font-size:32px; margin-bottom:8px;">📷</div>
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         <div style="font-size:14px; font-weight:500; color:var(--text2);">Snap or upload receipt</div>
         <div style="font-size:12px; color:var(--text3); margin-top:4px;">Gemini AI reads items, prices & charges</div>
         <input type="file" id="photo-input" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event)">
@@ -921,8 +925,8 @@ function goTo(screen) {
 }
 
 // ── CURRENCY SYMBOL ──────────────────────────────────
-function fmt(n) { return CONFIG.currencySymbol + Math.round(Math.abs(n)).toLocaleString(); }
-function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Math.round(Math.abs(n)).toLocaleString(); }
+function fmt(n) { return CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
 
 // ── HOME / DASHBOARD ─────────────────────────────────
 function renderHome() {
@@ -1719,7 +1723,7 @@ function recalc() {
     const rt = currentBill.receiptTotal;
     if (rt && rt > 0) {
       const diff = Math.abs(grandTotal - rt);
-      const match = diff < 1; // within ฿1 rounding tolerance
+      const match = diff < 0.02; // within 2 cents rounding tolerance
       rcEl.textContent = 'Receipt: ' + fmt(rt) + (match ? ' ✓' : ' ⚠');
       rcEl.style.color = match ? 'var(--grn)' : '#e08700';
     } else {
