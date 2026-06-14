@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.9.3 (2026-06-14)
+    - Feature #10: Multi-discount system — person-specific discounts in per-person boxes + shared discounts (50/50 or proportional) in Charges section
+    - Removed old Discount toggle and Cash voucher toggle; old bills with disc/voucher auto-migrate to new format
   v1.9.2 (2026-06-14)
     - Fix #27: fmt() now shows 2 decimal places — prices like £2.50 no longer rounded to £3
     - Fix #27: receipt comparison tolerance tightened to 0.02 (was 1.00)
@@ -539,7 +542,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.3</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -652,6 +655,9 @@ const CONFIG = {
       <div id="review-items"></div>
     </div>
 
+    <!-- Person split boxes -->
+    <div id="rv-person-boxes" style="margin:12px 14px 0;"></div>
+
     <div class="sec-label">Charges</div>
     <div class="card" style="margin-top:0;">
       <!-- Service charge -->
@@ -682,34 +688,12 @@ const CONFIG = {
           <span style="font-size:12px;color:var(--text2);">%</span>
         </div>
       </div>
-      <!-- Discount -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('disc')" class="toggle" id="toggle-disc"></div>
-          <div>
-            <div style="font-size:13px;">Discount</div>
-            <div style="font-size:11px;color:var(--text3);" id="disc-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="disc-input" style="display:none;">
-          <input type="number" id="disc-amt" value="0" min="0" style="width:68px;padding:6px 8px;font-size:13px;" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">฿</span>
-        </div>
+      <!-- Shared discounts -->
+      <div class="card-row" style="align-items:flex-start;padding-bottom:4px;">
+        <div style="font-size:13px;padding-top:2px;">Shared discounts</div>
+        <div onclick="addSharedDiscount()" style="font-size:12px;color:var(--acc);cursor:pointer;padding:2px 0;">+ Add</div>
       </div>
-      <!-- Cash voucher -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('voucher')" class="toggle" id="toggle-voucher"></div>
-          <div>
-            <div style="font-size:13px;">Cash voucher</div>
-            <div style="font-size:11px;color:var(--text3);" id="voucher-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="voucher-input" style="display:none;">
-          <input type="number" id="voucher-amt" value="0" min="0" style="width:68px;padding:6px 8px;font-size:13px;" placeholder="face value" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">฿</span>
-        </div>
-      </div>
+      <div id="rv-shared-discounts" style="padding:0 0 4px;"></div>
       <!-- Grand total -->
       <div class="card-row" style="border-top:0.5px solid var(--border);margin-top:4px;padding-top:12px;">
         <div style="font-size:14px;font-weight:600;">Grand total</div>
@@ -850,7 +834,7 @@ let state = {
   runningBalance: 0,  // positive = B owes A, negative = A owes B
 };
 let currentBill = {}; // bill being built
-let charges = { sc: false, vat: false, disc: false, voucher: false };
+let charges = { sc: false, vat: false };
 let customSplitItemIdx = -1;
 let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
@@ -1517,13 +1501,19 @@ function goToReview(source) {
       splitB: 50,
     }));
     if (!items.length) { alert('Add at least one item.'); return; }
-    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, disc:false, discAmt:0, voucher:false, voucherAmt:0 }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
+    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts:[] }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
     _ocrReceiptTotal = null;
   }
 
   // Sync charge toggles from currentBill
   const ch = currentBill.charges;
-  ['sc','vat','disc','voucher'].forEach(k => {
+  // Backward compat: migrate old disc/voucher fields to discounts array
+  if (!ch.discounts) {
+    ch.discounts = [];
+    if (ch.disc && ch.discAmt) ch.discounts.push({ id: Date.now()+'d', amt: ch.discAmt, label: 'Discount', assignTo: 'split' });
+    if (ch.voucher && ch.voucherAmt) ch.discounts.push({ id: Date.now()+'v', amt: ch.voucherAmt, label: 'Cash voucher', assignTo: 'split' });
+  }
+  ['sc','vat'].forEach(k => {
     charges[k] = ch[k] || false;
     updateToggle(k);
   });
@@ -1540,6 +1530,8 @@ function goToReview(source) {
   document.getElementById('rv-b-name').textContent = nameB;
 
   renderReviewItems();
+  renderPersonBoxes();
+  renderSharedDiscounts();
   recalc();
   goTo('review');
 }
@@ -1585,6 +1577,7 @@ function cycleAssign(i) {
   currentBill.items[i].assignment = next;
   if (next === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
   renderReviewItems();
+  renderPersonBoxes();
   recalc();
 }
 
@@ -1610,6 +1603,7 @@ function setAssignDirect(i, val) {
   currentBill.items[i].assignment = val;
   if (val === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
   renderReviewItems();
+  renderPersonBoxes();
   recalc();
 }
 
@@ -1645,7 +1639,7 @@ function applyCustomSplit() {
   const b = 100 - a;
   const it = currentBill.items[customSplitItemIdx];
   it.splitA = a; it.splitB = b; it.assignment = 'custom';
-  renderReviewItems(); recalc();
+  renderReviewItems(); renderPersonBoxes(); recalc();
   document.getElementById('custom-split-overlay').classList.remove('open');
 }
 
@@ -1666,54 +1660,64 @@ function updateToggle(key) {
 // ── RECALCULATE ───────────────────────────────────────
 function recalc() {
   const items = currentBill.items || [];
+  const discounts = (currentBill.charges && currentBill.charges.discounts) || [];
   const subtotal = items.reduce((s, it) => s + (it.price * it.qty), 0);
 
   const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
   const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
-  const discAmt = charges.disc ? (parseFloat(document.getElementById('disc-amt')?.value) || 0) : 0;
-  const voucherAmt = charges.voucher ? (parseFloat(document.getElementById('voucher-amt')?.value) || 0) : 0;
-
   const sc = subtotal * scPct / 100;
   const vat = (subtotal + sc) * vatPct / 100;
-  const disc = Math.min(discAmt, subtotal);
-  const postDisc = subtotal - disc + sc + vat;
-  const voucher = Math.min(voucherAmt, postDisc);
-  const grandTotal = Math.max(0, postDisc - voucher);
 
   // Per-item share
-  let shareA = 0, shareB = 0;
+  let itemsA = 0, itemsB = 0;
   items.forEach(it => {
     const total = it.price * it.qty;
-    if (it.assignment === 'a') shareA += total;
-    else if (it.assignment === 'b') shareB += total;
-    else { shareA += total * (it.splitA || 50) / 100; shareB += total * (it.splitB || 50) / 100; }
+    if (it.assignment === 'a') itemsA += total;
+    else if (it.assignment === 'b') itemsB += total;
+    else { itemsA += total * (it.splitA || 50) / 100; itemsB += total * (it.splitB || 50) / 100; }
   });
 
-  // Distribute charges proportionally
-  const chargeTotal = sc + vat - disc - voucher;
-  const ratio = subtotal > 0 ? shareA / subtotal : 0.5;
-  const chargesA = chargeTotal * ratio;
-  const chargesB = chargeTotal * (1 - ratio);
+  // Distribute discounts
+  const ratio = subtotal > 0 ? itemsA / subtotal : 0.5;
+  let personalDiscA = 0, personalDiscB = 0, sharedDiscA = 0, sharedDiscB = 0;
+  discounts.forEach(d => {
+    const amt = d.amt || 0;
+    if (d.assignTo === 'a')    personalDiscA += amt;
+    else if (d.assignTo === 'b') personalDiscB += amt;
+    else if (d.assignTo === 'split') { sharedDiscA += amt / 2; sharedDiscB += amt / 2; }
+    else if (d.assignTo === 'prop')  { sharedDiscA += amt * ratio; sharedDiscB += amt * (1 - ratio); }
+  });
+  const totalDiscA = personalDiscA + sharedDiscA;
+  const totalDiscB = personalDiscB + sharedDiscB;
 
-  const totalA = Math.max(0, shareA + chargesA);
-  const totalB = Math.max(0, shareB + chargesB);
+  // Distribute SC/VAT proportionally by item share
+  const chargesA = (sc + vat) * ratio;
+  const chargesB = (sc + vat) * (1 - ratio);
+
+  const shareA = Math.max(0, itemsA - totalDiscA + chargesA);
+  const shareB = Math.max(0, itemsB - totalDiscB + chargesB);
+  const grandTotal = Math.max(0, subtotal + sc + vat - totalDiscA - totalDiscB);
 
   // Update store
-  currentBill._calc = { subtotal, sc, scPct, vat, vatPct, disc, discAmt, voucher, voucherAmt, grandTotal, shareA: totalA, shareB: totalB, chargesA, chargesB, itemsA: shareA, itemsB: shareB };
+  currentBill._calc = { subtotal, sc, scPct, vat, vatPct, discounts, personalDiscA, personalDiscB, sharedDiscA, sharedDiscB, grandTotal, shareA, shareB, chargesA, chargesB, itemsA, itemsB };
 
   // Update previews
   if (document.getElementById('sc-preview')) {
     document.getElementById('sc-preview').textContent = charges.sc ? scPct+'% → +'+fmt(sc) : 'off';
     document.getElementById('vat-preview').textContent = charges.vat ? vatPct+'% → +'+fmt(vat) : 'off';
-    document.getElementById('disc-preview').textContent = charges.disc ? '-'+fmt(disc) : 'off';
-    document.getElementById('voucher-preview').textContent = charges.voucher ? '-'+fmt(voucher) : 'off';
   }
 
+  // Update person box subtotals (live, no re-render)
+  const stA = document.getElementById('rv-subtotal-a');
+  const stB = document.getElementById('rv-subtotal-b');
+  if (stA) stA.textContent = fmt(Math.max(0, itemsA - personalDiscA));
+  if (stB) stB.textContent = fmt(Math.max(0, itemsB - personalDiscB));
+
   // Update totals footer
-  document.getElementById('rv-a-total').textContent = fmt(totalA);
-  document.getElementById('rv-b-total').textContent = fmt(totalB);
-  document.getElementById('rv-a-detail').textContent = 'items '+fmt(shareA)+' + charges '+fmt(Math.abs(chargesA));
-  document.getElementById('rv-b-detail').textContent = 'items '+fmt(shareB)+' + charges '+fmt(Math.abs(chargesB));
+  document.getElementById('rv-a-total').textContent = fmt(shareA);
+  document.getElementById('rv-b-total').textContent = fmt(shareB);
+  document.getElementById('rv-a-detail').textContent = 'items '+fmt(itemsA)+' + charges '+fmt(Math.abs(chargesA));
+  document.getElementById('rv-b-detail').textContent = 'items '+fmt(itemsB)+' + charges '+fmt(Math.abs(chargesB));
 
   // Update grand total + receipt comparison
   const gtEl = document.getElementById('rv-grand-total');
@@ -1723,13 +1727,116 @@ function recalc() {
     const rt = currentBill.receiptTotal;
     if (rt && rt > 0) {
       const diff = Math.abs(grandTotal - rt);
-      const match = diff < 0.02; // within 2 cents rounding tolerance
+      const match = diff < 0.02;
       rcEl.textContent = 'Receipt: ' + fmt(rt) + (match ? ' ✓' : ' ⚠');
       rcEl.style.color = match ? 'var(--grn)' : '#e08700';
     } else {
       rcEl.textContent = '';
     }
   }
+}
+
+// ── PERSON BOXES ──────────────────────────────────────
+function renderPersonBoxes() {
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const items = currentBill.items || [];
+  const discounts = (currentBill.charges && currentBill.charges.discounts) || [];
+
+  let itemsA = 0, itemsB = 0;
+  items.forEach(it => {
+    const total = it.price * it.qty;
+    if (it.assignment === 'a') itemsA += total;
+    else if (it.assignment === 'b') itemsB += total;
+    else { itemsA += total * (it.splitA||50)/100; itemsB += total * (it.splitB||50)/100; }
+  });
+
+  const discA = discounts.filter(d => d.assignTo === 'a');
+  const discB = discounts.filter(d => d.assignTo === 'b');
+  const sumDiscA = discA.reduce((s,d) => s + (d.amt||0), 0);
+  const sumDiscB = discB.reduce((s,d) => s + (d.amt||0), 0);
+
+  function discRows(discs) {
+    return discs.map(d => `
+      <div style="display:flex;align-items:center;gap:4px;margin-top:5px;">
+        <input type="text" value="${d.label||''}" placeholder="label"
+          style="flex:1;min-width:0;font-size:11px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
+          oninput="updateDiscount('${d.id}','label',this.value)">
+        <span style="font-size:11px;color:rgba(0,0,0,0.4);">-</span>
+        <input type="number" value="${d.amt||''}" placeholder="0" min="0"
+          style="width:54px;font-size:11px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
+          oninput="updateDiscount('${d.id}','amt',this.value)">
+        <span style="font-size:13px;color:rgba(0,0,0,0.3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+      </div>`).join('');
+  }
+
+  document.getElementById('rv-person-boxes').innerHTML = `
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;background:var(--acc-light);border-radius:10px;padding:10px;">
+        <div style="font-size:11px;font-weight:600;color:var(--acc-text);margin-bottom:5px;">${nameA}</div>
+        <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsA)}</div>
+        ${discRows(discA)}
+        <div onclick="addPersonDiscount('a')" style="font-size:11px;color:var(--acc);margin-top:6px;cursor:pointer;">+ discount</div>
+        ${sumDiscA > 0 ? `<div style="border-top:0.5px solid rgba(0,0,0,0.1);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc-text);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-sumDiscA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
+      </div>
+      <div style="flex:1;background:#FFF0E6;border-radius:10px;padding:10px;">
+        <div style="font-size:11px;font-weight:600;color:#a0623a;margin-bottom:5px;">${nameB}</div>
+        <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsB)}</div>
+        ${discRows(discB)}
+        <div onclick="addPersonDiscount('b')" style="font-size:11px;color:#a0623a;margin-top:6px;cursor:pointer;">+ discount</div>
+        ${sumDiscB > 0 ? `<div style="border-top:0.5px solid rgba(0,0,0,0.1);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-sumDiscB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
+      </div>
+    </div>`;
+}
+
+function addPersonDiscount(who) {
+  if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
+  currentBill.charges.discounts.push({ id: Date.now().toString(), amt: 0, label: '', assignTo: who });
+  renderPersonBoxes();
+  recalc();
+}
+
+function addSharedDiscount() {
+  if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
+  currentBill.charges.discounts.push({ id: Date.now().toString(), amt: 0, label: '', assignTo: 'split' });
+  renderSharedDiscounts();
+  recalc();
+}
+
+function removeDiscount(id) {
+  currentBill.charges.discounts = currentBill.charges.discounts.filter(d => d.id !== id);
+  renderPersonBoxes();
+  renderSharedDiscounts();
+  recalc();
+}
+
+function updateDiscount(id, field, value) {
+  const d = (currentBill.charges.discounts || []).find(d => d.id === id);
+  if (!d) return;
+  d[field] = field === 'amt' ? (parseFloat(value) || 0) : value;
+  recalc();
+}
+
+function renderSharedDiscounts() {
+  const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop');
+  const el = document.getElementById('rv-shared-discounts');
+  if (!el) return;
+  if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 0 6px;">None</div>'; return; }
+  el.innerHTML = discs.map(d => `
+    <div style="display:flex;align-items:center;gap:5px;padding:4px 0;">
+      <input type="text" value="${d.label||''}" placeholder="label"
+        style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+        oninput="updateDiscount('${d.id}','label',this.value)">
+      <input type="number" value="${d.amt||''}" placeholder="0" min="0"
+        style="width:62px;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+        oninput="updateDiscount('${d.id}','amt',this.value)">
+      <select style="font-size:11px;padding:5px 4px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+        onchange="updateDiscount('${d.id}','assignTo',this.value)">
+        <option value="split" ${d.assignTo==='split'?'selected':''}>50/50</option>
+        <option value="prop"  ${d.assignTo==='prop' ?'selected':''}>Proportional</option>
+      </select>
+      <span style="font-size:14px;color:var(--text3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+    </div>`).join('');
 }
 
 // ── CONFIRM SCREEN ────────────────────────────────────
@@ -1745,8 +1852,11 @@ function goToConfirm() {
   let bdown = `<div class="card-row"><span>Items subtotal</span><span>${fmt(calc.subtotal)}</span></div>`;
   if (calc.sc) bdown += `<div class="card-row"><span>Service charge (${calc.scPct}%)</span><span>+${fmt(calc.sc)}</span></div>`;
   if (calc.vat) bdown += `<div class="card-row"><span>VAT (${calc.vatPct}%)</span><span>+${fmt(calc.vat)}</span></div>`;
-  if (calc.disc) bdown += `<div class="card-row"><span>Discount</span><span style="color:var(--grn);">-${fmt(calc.disc)}</span></div>`;
-  if (calc.voucher) bdown += `<div class="card-row"><span>Cash voucher</span><span style="color:var(--grn);">-${fmt(calc.voucher)}</span></div>`;
+  (calc.discounts || []).forEach(d => {
+    if (!d.amt) return;
+    const typeLabel = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional' : '50/50';
+    bdown += `<div class="card-row"><span>${d.label || 'Discount'} (${typeLabel})</span><span style="color:var(--grn);">-${fmt(d.amt)}</span></div>`;
+  });
   bdown += `<div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(calc.grandTotal)}</span></div>`;
   document.getElementById('confirm-breakdown').innerHTML = bdown;
 
@@ -1830,9 +1940,9 @@ async function saveBill() {
 
   // Reset
   currentBill = {};
-  charges = { sc:false, vat:false, disc:false, voucher:false };
+  charges = { sc:false, vat:false };
   initManualItems();
-  ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
+  ['sc','vat'].forEach(k => updateToggle(k));
   document.getElementById('bill-place').value = '';
   document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('bill-category').value = '';
@@ -2201,7 +2311,7 @@ function initApp() {
   init();
   initManualItems();
   updateWhoPayNames();
-  ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
+  ['sc','vat'].forEach(k => updateToggle(k));
 }
 
 // ── BOOT ─────────────────────────────────────────────
