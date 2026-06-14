@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.9.5 (2026-06-14)
+    - Feature: Custom split sheet now has 3 modes — % (percentage), Qty (units per person e.g. 3/2 plates), ฿ (direct amount e.g. ฿200/฿50). All accessible via ▾ → Custom. Chip shows result in relevant format. Cycle (tap chip) stays Shared→A→B only.
+  v1.9.4 (2026-06-14)
+    - Fix recalc: SC/VAT now calculated on items minus person-box discounts (pre-tax base)
+    - Vouchers section (post-tax) deducted after SC/VAT — renamed from "Shared discounts"
   v1.9.3 (2026-06-14)
     - Feature #10: Multi-discount system — person-specific discounts in per-person boxes + shared discounts (50/50 or proportional) in Charges section
     - Removed old Discount toggle and Cash voucher toggle; old bills with disc/voucher auto-migrate to new format
@@ -542,7 +547,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.3</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.5</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -690,7 +695,7 @@ const CONFIG = {
       </div>
       <!-- Shared discounts -->
       <div class="card-row" style="align-items:flex-start;padding-bottom:4px;">
-        <div style="font-size:13px;padding-top:2px;">Shared discounts</div>
+        <div style="font-size:13px;padding-top:2px;">Vouchers <span style="font-size:10px;color:var(--text3);">post-tax</span></div>
         <div onclick="addSharedDiscount()" style="font-size:12px;color:var(--acc);cursor:pointer;padding:2px 0;">+ Add</div>
       </div>
       <div id="rv-shared-discounts" style="padding:0 0 4px;"></div>
@@ -800,23 +805,75 @@ const CONFIG = {
   <div class="sheet" id="custom-split-sheet">
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="csp-title">Custom split</div>
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-      <div style="flex:1;">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-label">Person A</div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <input type="number" id="csp-a-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('a')">
-          <span style="font-size:13px;">%</span>
+    <!-- Mode tabs -->
+    <div style="display:flex;border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;">
+      <div id="csp-tab-pct" onclick="switchCustomMode('pct')" style="flex:1;text-align:center;padding:7px 0;font-size:13px;cursor:pointer;">%</div>
+      <div id="csp-tab-qty" onclick="switchCustomMode('qty')" style="flex:1;text-align:center;padding:7px 0;font-size:13px;cursor:pointer;border-left:0.5px solid var(--border);border-right:0.5px solid var(--border);">Qty</div>
+      <div id="csp-tab-amt" onclick="switchCustomMode('amt')" style="flex:1;text-align:center;padding:7px 0;font-size:13px;cursor:pointer;">฿</div>
+    </div>
+    <!-- % mode -->
+    <div id="csp-pct-section">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-label">A</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-a-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('a')">
+            <span style="font-size:13px;">%</span>
+          </div>
         </div>
-      </div>
-      <div style="font-size:18px; color:var(--text3);">↔</div>
-      <div style="flex:1;">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-label">Person B</div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <input type="number" id="csp-b-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('b')">
-          <span style="font-size:13px;">%</span>
+        <div style="font-size:18px;color:var(--text3);">↔</div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-label">B</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-b-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('b')">
+            <span style="font-size:13px;">%</span>
+          </div>
         </div>
       </div>
     </div>
+    <!-- Qty mode -->
+    <div id="csp-qty-section" style="display:none;">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Total: <span id="csp-qty-total">0</span> units</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-qty-label">A</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-a-qty" min="0" value="0" style="width:70px;" oninput="syncQty('a')">
+            <span style="font-size:12px;color:var(--text3);">units</span>
+          </div>
+        </div>
+        <div style="font-size:18px;color:var(--text3);">↔</div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-qty-label">B</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-b-qty" min="0" value="0" style="width:70px;" oninput="syncQty('b')">
+            <span style="font-size:12px;color:var(--text3);">units</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ฿ amount mode -->
+    <div id="csp-amt-section" style="display:none;">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Total: <span id="csp-amt-total">฿0</span></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-amt-label">A</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-a-amt" min="0" value="0" style="width:70px;" oninput="syncAmt('a')">
+            <span style="font-size:13px;">฿</span>
+          </div>
+        </div>
+        <div style="font-size:18px;color:var(--text3);">↔</div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-amt-label">B</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" id="csp-b-amt" min="0" value="0" style="width:70px;" oninput="syncAmt('b')">
+            <span style="font-size:13px;">฿</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;" id="csp-preview">—</div>
     <button class="btn" onclick="applyCustomSplit()">Apply</button>
   </div>
 </div>
@@ -1544,7 +1601,9 @@ function renderReviewItems() {
     let chipClass, chipLabel;
     if (it.assignment === 'a') { chipClass = 'chip-a'; chipLabel = nameA; }
     else if (it.assignment === 'b') { chipClass = 'chip-b'; chipLabel = nameB; }
-    else if (it.assignment === 'custom') { chipClass = 'chip-custom'; chipLabel = (it.splitA||50)+'/'+(it.splitB||50); }
+    else if (it.assignment === 'custom') { chipClass = 'chip-custom'; chipLabel = (it.splitA||50)+'/'+(it.splitB||50)+'%'; }
+    else if (it.assignment === 'qty') { chipClass = 'chip-custom'; chipLabel = (it.qtyA||0)+'/'+(it.qtyB||0); }
+    else if (it.assignment === 'amt') { chipClass = 'chip-custom'; chipLabel = fmt(it.amtA||0)+'/'+fmt(it.amtB||0); }
     else { chipClass = 'chip-shared'; chipLabel = 'Shared'; }
     return `<div class="card-row" style="gap:8px;">
       <div style="flex:1;min-width:0;">
@@ -1561,7 +1620,7 @@ function renderReviewItems() {
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom %</div>
+          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
         </div>
       </div>
     </div>`;
@@ -1607,17 +1666,46 @@ function setAssignDirect(i, val) {
   recalc();
 }
 
+let currentCustomMode = 'pct';
+
 function openCustomSplit(i) {
   customSplitItemIdx = i;
   const it = currentBill.items[i];
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
+  const totalQty = it.qty || 1;
+  const totalAmt = it.price * totalQty;
   document.getElementById('csp-title').textContent = 'Custom split — ' + it.name;
-  document.getElementById('csp-a-label').textContent = nameA;
-  document.getElementById('csp-b-label').textContent = nameB;
+  // Update all labels
+  ['csp-a-label','csp-a-qty-label','csp-a-amt-label'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = nameA; });
+  ['csp-b-label','csp-b-qty-label','csp-b-amt-label'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = nameB; });
+  document.getElementById('csp-qty-total').textContent = totalQty;
+  document.getElementById('csp-amt-total').textContent = fmt(totalAmt);
+  // Pre-select mode based on current assignment
+  const mode = it.assignment === 'qty' ? 'qty' : it.assignment === 'amt' ? 'amt' : 'pct';
+  // Pre-fill values
   document.getElementById('csp-a-pct').value = it.splitA || 50;
   document.getElementById('csp-b-pct').value = it.splitB || 50;
+  const aQty = it.qtyA != null ? it.qtyA : Math.floor(totalQty / 2);
+  document.getElementById('csp-a-qty').value = aQty;
+  document.getElementById('csp-b-qty').value = totalQty - aQty;
+  const aAmt = it.amtA != null ? it.amtA : Math.round(totalAmt / 2 * 100) / 100;
+  document.getElementById('csp-a-amt').value = aAmt;
+  document.getElementById('csp-b-amt').value = Math.round((totalAmt - aAmt) * 100) / 100;
+  switchCustomMode(mode);
   document.getElementById('custom-split-overlay').classList.add('open');
+}
+
+function switchCustomMode(mode) {
+  currentCustomMode = mode;
+  ['pct','qty','amt'].forEach(m => {
+    const tab = document.getElementById('csp-tab-'+m);
+    const sec = document.getElementById('csp-'+m+'-section');
+    const active = m === mode;
+    if (tab) { tab.style.background = active ? 'var(--acc)' : 'transparent'; tab.style.color = active ? 'white' : 'var(--text2)'; }
+    if (sec) sec.style.display = active ? 'block' : 'none';
+  });
+  updateCustomPreview();
 }
 
 function closeCustomSplit(e) {
@@ -1632,13 +1720,56 @@ function syncSplit(side) {
   const val = Math.min(100, Math.max(0, parseInt(side==='a' ? aEl.value : bEl.value) || 0));
   if (side === 'a') { aEl.value = val; bEl.value = 100 - val; }
   else { bEl.value = val; aEl.value = 100 - val; }
+  updateCustomPreview();
+}
+
+function syncQty(side) {
+  const it = currentBill.items[customSplitItemIdx];
+  const totalQty = it ? (it.qty || 1) : 1;
+  const aEl = document.getElementById('csp-a-qty');
+  const bEl = document.getElementById('csp-b-qty');
+  if (side === 'a') { const a = Math.min(totalQty, Math.max(0, parseInt(aEl.value)||0)); aEl.value = a; bEl.value = totalQty - a; }
+  else { const b = Math.min(totalQty, Math.max(0, parseInt(bEl.value)||0)); bEl.value = b; aEl.value = totalQty - b; }
+  updateCustomPreview();
+}
+
+function syncAmt(side) {
+  const it = currentBill.items[customSplitItemIdx];
+  const total = it ? it.price * (it.qty || 1) : 0;
+  const aEl = document.getElementById('csp-a-amt');
+  const bEl = document.getElementById('csp-b-amt');
+  if (side === 'a') { const a = Math.min(total, Math.max(0, parseFloat(aEl.value)||0)); aEl.value = a; bEl.value = Math.round((total - a)*100)/100; }
+  else { const b = Math.min(total, Math.max(0, parseFloat(bEl.value)||0)); bEl.value = b; aEl.value = Math.round((total - b)*100)/100; }
+  updateCustomPreview();
+}
+
+function updateCustomPreview() {
+  const it = currentBill.items[customSplitItemIdx];
+  if (!it) return;
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const total = it.price * (it.qty || 1);
+  let pA = 0, pB = 0;
+  if (currentCustomMode === 'pct') { const a = parseInt(document.getElementById('csp-a-pct').value)||50; pA = total*a/100; pB = total*(100-a)/100; }
+  else if (currentCustomMode === 'qty') { pA = it.price*(parseInt(document.getElementById('csp-a-qty').value)||0); pB = it.price*(parseInt(document.getElementById('csp-b-qty').value)||0); }
+  else { pA = parseFloat(document.getElementById('csp-a-amt').value)||0; pB = parseFloat(document.getElementById('csp-b-amt').value)||0; }
+  document.getElementById('csp-preview').textContent = nameA+': '+fmt(pA)+'  ·  '+nameB+': '+fmt(pB);
 }
 
 function applyCustomSplit() {
-  const a = parseInt(document.getElementById('csp-a-pct').value) || 50;
-  const b = 100 - a;
   const it = currentBill.items[customSplitItemIdx];
-  it.splitA = a; it.splitB = b; it.assignment = 'custom';
+  if (currentCustomMode === 'pct') {
+    const a = parseInt(document.getElementById('csp-a-pct').value) || 50;
+    it.splitA = a; it.splitB = 100 - a; it.assignment = 'custom';
+  } else if (currentCustomMode === 'qty') {
+    it.qtyA = parseInt(document.getElementById('csp-a-qty').value)||0;
+    it.qtyB = parseInt(document.getElementById('csp-b-qty').value)||0;
+    it.assignment = 'qty';
+  } else {
+    it.amtA = parseFloat(document.getElementById('csp-a-amt').value)||0;
+    it.amtB = parseFloat(document.getElementById('csp-b-amt').value)||0;
+    it.assignment = 'amt';
+  }
   renderReviewItems(); renderPersonBoxes(); recalc();
   document.getElementById('custom-split-overlay').classList.remove('open');
 }
@@ -1665,8 +1796,6 @@ function recalc() {
 
   const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
   const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
-  const sc = subtotal * scPct / 100;
-  const vat = (subtotal + sc) * vatPct / 100;
 
   // Per-item share
   let itemsA = 0, itemsB = 0;
@@ -1674,29 +1803,40 @@ function recalc() {
     const total = it.price * it.qty;
     if (it.assignment === 'a') itemsA += total;
     else if (it.assignment === 'b') itemsB += total;
+    else if (it.assignment === 'qty') { itemsA += it.price * (it.qtyA || 0); itemsB += it.price * (it.qtyB || 0); }
+    else if (it.assignment === 'amt') { itemsA += it.amtA || 0; itemsB += it.amtB || 0; }
     else { itemsA += total * (it.splitA || 50) / 100; itemsB += total * (it.splitB || 50) / 100; }
   });
 
-  // Distribute discounts
-  const ratio = subtotal > 0 ? itemsA / subtotal : 0.5;
-  let personalDiscA = 0, personalDiscB = 0, sharedDiscA = 0, sharedDiscB = 0;
+  // Person-box discounts (pre-tax) — split by assignTo 'a' or 'b' only
+  let personalDiscA = 0, personalDiscB = 0;
   discounts.forEach(d => {
     const amt = d.amt || 0;
-    if (d.assignTo === 'a')    personalDiscA += amt;
+    if (d.assignTo === 'a') personalDiscA += amt;
     else if (d.assignTo === 'b') personalDiscB += amt;
-    else if (d.assignTo === 'split') { sharedDiscA += amt / 2; sharedDiscB += amt / 2; }
-    else if (d.assignTo === 'prop')  { sharedDiscA += amt * ratio; sharedDiscB += amt * (1 - ratio); }
   });
-  const totalDiscA = personalDiscA + sharedDiscA;
-  const totalDiscB = personalDiscB + sharedDiscB;
+
+  // SC/VAT calculated on pre-tax base (items minus person discounts)
+  const preTaxBase = Math.max(0, subtotal - personalDiscA - personalDiscB);
+  const ratio = subtotal > 0 ? itemsA / subtotal : 0.5;
+  const sc = preTaxBase * scPct / 100;
+  const vat = (preTaxBase + sc) * vatPct / 100;
+
+  // Vouchers (post-tax) — split after SC/VAT
+  let sharedDiscA = 0, sharedDiscB = 0;
+  discounts.forEach(d => {
+    const amt = d.amt || 0;
+    if (d.assignTo === 'split') { sharedDiscA += amt / 2; sharedDiscB += amt / 2; }
+    else if (d.assignTo === 'prop') { sharedDiscA += amt * ratio; sharedDiscB += amt * (1 - ratio); }
+  });
 
   // Distribute SC/VAT proportionally by item share
   const chargesA = (sc + vat) * ratio;
   const chargesB = (sc + vat) * (1 - ratio);
 
-  const shareA = Math.max(0, itemsA - totalDiscA + chargesA);
-  const shareB = Math.max(0, itemsB - totalDiscB + chargesB);
-  const grandTotal = Math.max(0, subtotal + sc + vat - totalDiscA - totalDiscB);
+  const shareA = Math.max(0, itemsA - personalDiscA - sharedDiscA + chargesA);
+  const shareB = Math.max(0, itemsB - personalDiscB - sharedDiscB + chargesB);
+  const grandTotal = Math.max(0, preTaxBase + sc + vat - sharedDiscA - sharedDiscB);
 
   // Update store
   currentBill._calc = { subtotal, sc, scPct, vat, vatPct, discounts, personalDiscA, personalDiscB, sharedDiscA, sharedDiscB, grandTotal, shareA, shareB, chargesA, chargesB, itemsA, itemsB };
@@ -1748,6 +1888,8 @@ function renderPersonBoxes() {
     const total = it.price * it.qty;
     if (it.assignment === 'a') itemsA += total;
     else if (it.assignment === 'b') itemsB += total;
+    else if (it.assignment === 'qty') { itemsA += it.price * (it.qtyA||0); itemsB += it.price * (it.qtyB||0); }
+    else if (it.assignment === 'amt') { itemsA += it.amtA||0; itemsB += it.amtB||0; }
     else { itemsA += total * (it.splitA||50)/100; itemsB += total * (it.splitB||50)/100; }
   });
 
@@ -1854,7 +1996,7 @@ function goToConfirm() {
   if (calc.vat) bdown += `<div class="card-row"><span>VAT (${calc.vatPct}%)</span><span>+${fmt(calc.vat)}</span></div>`;
   (calc.discounts || []).forEach(d => {
     if (!d.amt) return;
-    const typeLabel = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional' : '50/50';
+    const typeLabel = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional, post-tax' : '50/50, post-tax';
     bdown += `<div class="card-row"><span>${d.label || 'Discount'} (${typeLabel})</span><span style="color:var(--grn);">-${fmt(d.amt)}</span></div>`;
   });
   bdown += `<div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(calc.grandTotal)}</span></div>`;
