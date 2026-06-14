@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.6.2 (2026-06-14)
+    - Fix: CORS preflight error on POST to Apps Script
+      Removed Content-Type: application/json header, added mode: no-cors
+      Affected both syncToSheets (addBill) and callSetConfig (settings sync)
+
   v1.6.1 (2026-06-14)
     - Settings now shows Backend version (fetched from Apps Script on load)
 
@@ -403,7 +408,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.1</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.2</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1514,7 +1519,6 @@ async function syncToSheets(bill) {
   await fetch(CONFIG.googleSheetUrl, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 }
@@ -1691,7 +1695,7 @@ async function callSetConfig(key, value) {
   try {
     await fetch(CONFIG.googleSheetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      mode: 'no-cors',
       body: JSON.stringify({ action: 'setConfig', key, value }),
     });
   } catch(e) {
