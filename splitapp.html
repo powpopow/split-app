@@ -2,6 +2,15 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.7.0 (2026-06-14)
+    - Google auth login via Google Identity Services (client-side OAuth)
+    - Sign-in screen shown before app if not authenticated
+    - Email-based identity: person_a_emails / person_b_emails in Config tab (comma-separated)
+    - currentUser stored in localStorage ('a' or 'b') after sign-in
+    - Home screen greets current user by name, shows balance from their perspective
+    - Settings: Account section with "Signed in as" and "Sign out"
+    - Unrecognised email → Access denied message
+
   v1.6.2 (2026-06-14)
     - Fix: CORS preflight error on POST to Apps Script
       Removed Content-Type: application/json header, added mode: no-cors
@@ -75,6 +84,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SplitApp</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ── CONFIG ─────────────────────────────────────────── */
 :root {
@@ -237,17 +247,35 @@ const CONFIG = {
   geminiApiKey: '',         // Fetched from Config tab in Google Sheet on load
   googleSheetUrl: 'https://script.google.com/macros/s/AKfycbz_rQoPkoHaqa0nT5RIjHRfjMN34VRvwL-VKXvJsTaBqz5cSVN14N-fAJh98ATGNUqpaA/exec',
   googleSheetEditUrl: 'https://docs.google.com/spreadsheets/d/1lwtr9H-Gg1QaDUTpxW7uiT_3nmaXlEQ6ExJa2Sg5b2c/edit',
+  googleClientId: '1095947409464-uf5j6j4q1jkdcsj7cksst7r1j8da09ii.apps.googleusercontent.com',
   personA: '',
   personB: '',
+  personAEmails: [],
+  personBEmails: [],
   currency: 'THB',
   currencySymbol: '฿',
 };
 </script>
 
 <!-- ════════════════════════════════════════════════════
+     SIGN-IN SCREEN
+════════════════════════════════════════════════════ -->
+<div id="signin-screen" style="display:flex; position:fixed; inset:0; background:var(--bg); z-index:1000; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:40px 24px;">
+  <div style="text-align:center;">
+    <div style="font-size:56px; margin-bottom:16px;">💸</div>
+    <div style="font-size:26px; font-weight:700; color:var(--text); letter-spacing:-0.5px;">SplitApp</div>
+    <div style="font-size:14px; color:var(--text2); margin-top:6px;">Your personal expense tracker</div>
+  </div>
+  <div id="signin-google-btn"></div>
+  <div id="signin-loading" style="display:none; font-size:13px; color:var(--text3);">Signing in…</div>
+  <div id="signin-error" style="display:none; font-size:13px; color:var(--red); text-align:center; max-width:280px; line-height:1.6; padding:10px 14px; background:var(--red-light); border-radius:10px;"></div>
+  <div style="font-size:11px; color:var(--text3); text-align:center; position:absolute; bottom:calc(32px + env(safe-area-inset-bottom, 0px));">Accessible to authorised members only</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
      APP SHELL
 ════════════════════════════════════════════════════ -->
-<div id="app">
+<div id="app" style="display:none;">
 
   <!-- ── SCREENS ─────────────────────────────────────── -->
 
@@ -406,9 +434,21 @@ const CONFIG = {
       </div>
     </div>
 
+    <div class="sec-label">Account</div>
+    <div class="card">
+      <div class="card-row">
+        <div class="row-label">Signed in as</div>
+        <div class="row-val" id="signed-in-name" style="font-size:13px;">—</div>
+      </div>
+      <div class="card-row" onclick="signOut()" style="cursor:pointer;">
+        <div class="row-label" style="color:var(--red);">Sign out</div>
+        <div class="row-val"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+      </div>
+    </div>
+
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.7.0</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -702,6 +742,9 @@ const CONFIG = {
      JAVASCRIPT
 ════════════════════════════════════════════════════ -->
 <script>
+// ── CURRENT USER ─────────────────────────────────────
+let currentUser = null; // 'a' or 'b', persisted in localStorage
+
 // ── STATE ────────────────────────────────────────────
 let state = {
   bills: [],          // Array of bill objects
@@ -788,28 +831,33 @@ function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Ma
 function renderHome() {
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
-  document.getElementById('home-greeting').textContent = 'Hi, ' + nameA;
+  const myName = currentUser === 'b' ? nameB : nameA;
+  const otherName = currentUser === 'b' ? nameA : nameB;
+  const myAvatarClass = currentUser === 'b' ? 'av-b' : 'av-a';
+  document.getElementById('home-greeting').textContent = 'Hi, ' + myName;
 
   // Avatars
   document.getElementById('home-avatars').innerHTML =
     `<div class="avatar av-a">${nameA[0] || '?'}</div>
      <div class="avatar av-b">${nameB[0] || '?'}</div>`;
 
-  // Balance card
-  const bal = state.runningBalance; // positive = B owes A
+  // Balance card — from current user's perspective
+  // runningBalance > 0 means B owes A; < 0 means A owes B
+  const bal = state.runningBalance;
+  const myBal = currentUser === 'b' ? -bal : bal; // positive = other owes me
   const card = document.getElementById('balance-card');
   const amtEl = document.getElementById('balance-amount');
   const lblEl = document.getElementById('balance-label');
-  amtEl.textContent = fmt(bal);
-  if (Math.abs(bal) < 1) {
+  amtEl.textContent = fmt(myBal);
+  if (Math.abs(myBal) < 1) {
     card.style.background = 'var(--acc)';
     lblEl.textContent = 'All settled up';
-  } else if (bal > 0) {
+  } else if (myBal > 0) {
     card.style.background = 'var(--acc)';
-    lblEl.textContent = 'Get ' + fmt(bal) + ' from ' + nameB;
+    lblEl.textContent = 'Get ' + fmt(myBal) + ' from ' + otherName;
   } else {
     card.style.background = 'var(--red)';
-    lblEl.textContent = 'Pay ' + fmt(bal) + ' to ' + nameB;
+    lblEl.textContent = 'Pay ' + fmt(myBal) + ' to ' + otherName;
   }
 
   // Stats
@@ -835,8 +883,12 @@ function billRowHTML(b) {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
   const paidBy = b.paidBy === 'a' ? nameA : nameB;
+  // netForA: positive = B owes A (good for A), negative = A owes B
   const netForA = b.paidBy === 'a' ? (b.grandTotal - b.shareA) : -b.shareA;
-  const positive = netForA > 0;
+  // Flip for B's perspective
+  const myNet = currentUser === 'b' ? -netForA : netForA;
+  const otherName = currentUser === 'b' ? nameA : nameB;
+  const positive = myNet > 0;
   const catClass = { food:'cat-food', shop:'cat-shop', cafe:'cat-cafe', transport:'cat-transport' }[b.category] || 'cat-other';
   const catEmoji = { food:'🍜', shop:'🛒', cafe:'☕', transport:'🚗', '':'📋' }[b.category] || '📋';
   return `<div class="card-row del-row" data-id="${b.id}">
@@ -848,8 +900,8 @@ function billRowHTML(b) {
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div class="${positive ? 'amt-grn' : 'amt-red'}">${positive ? '+' : '-'}${fmt(Math.abs(netForA))}</div>
-      <div style="font-size:10px;color:var(--text3);">${positive ? 'get back' : 'pay ' + nameB}</div>
+      <div class="${positive ? 'amt-grn' : 'amt-red'}">${positive ? '+' : '-'}${fmt(Math.abs(myNet))}</div>
+      <div style="font-size:10px;color:var(--text3);">${positive ? 'get back' : 'pay ' + otherName}</div>
     </div>
     <div class="del-action" onclick="deleteBill('${b.id}')">Delete</div>
   </div>`;
@@ -886,11 +938,13 @@ function showBreakdown() {
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
   const bal = state.runningBalance;
+  const myBal = currentUser === 'b' ? -bal : bal;
+  const otherName = currentUser === 'b' ? nameA : nameB;
   openSheet('info', 'Balance breakdown', `
     <div style="padding:4px 0;">
       <div class="sheet-option"><span class="so-label">${nameA} paid out total</span><span>${fmt(state.bills.filter(b=>b.paidBy==='a').reduce((s,b)=>s+b.grandTotal,0))}</span></div>
       <div class="sheet-option"><span class="so-label">${nameB} paid out total</span><span>${fmt(state.bills.filter(b=>b.paidBy==='b').reduce((s,b)=>s+b.grandTotal,0))}</span></div>
-      <div class="sheet-option"><span class="so-label" style="font-weight:500;">Net balance</span><span style="font-weight:500;color:${bal>=0?'var(--grn)':'var(--red)'};">${bal>=0?'Get':'Pay'} ${fmt(bal)}</span></div>
+      <div class="sheet-option"><span class="so-label" style="font-weight:500;">Your balance</span><span style="font-weight:500;color:${myBal>=0?'var(--grn)':'var(--red)'};">${myBal>=0?'Get':'Pay'} ${fmt(myBal)} ${myBal>=0?'from':'to'} ${otherName}</span></div>
     </div>`);
 }
 
@@ -898,11 +952,14 @@ function shareBalance() {
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
   const bal = state.runningBalance;
-  const msg = bal > 0
-    ? `${nameB} owes ${nameA} ${fmt(bal)} (${state.bills.length} bills)`
-    : bal < 0
-    ? `${nameA} owes ${nameB} ${fmt(bal)} (${state.bills.length} bills)`
-    : `${nameA} & ${nameB} are all settled up`;
+  const myBal = currentUser === 'b' ? -bal : bal;
+  const myName = currentUser === 'b' ? nameB : nameA;
+  const otherName = currentUser === 'b' ? nameA : nameB;
+  const msg = Math.abs(myBal) < 1
+    ? `${nameA} & ${nameB} are all settled up`
+    : myBal > 0
+    ? `${otherName} owes ${myName} ${fmt(myBal)} (${state.bills.length} bills)`
+    : `${myName} owes ${otherName} ${fmt(myBal)} (${state.bills.length} bills)`;
   if (navigator.share) navigator.share({ text: msg });
   else navigator.clipboard?.writeText(msg).then(() => alert('Copied: ' + msg));
 }
@@ -956,6 +1013,11 @@ function updateSettingsUI() {
   const hasGemini = CONFIG.geminiApiKey && CONFIG.geminiApiKey.length > 5;
   const ocrEl = document.getElementById('ocr-status');
   if (ocrEl) ocrEl.innerHTML = hasGemini ? `<span class="badge badge-acc">${geminiModel} ✓</span>` : '<span class="badge badge-red">Not loaded</span>';
+  const signedInEl = document.getElementById('signed-in-name');
+  if (signedInEl) {
+    const myName = currentUser === 'a' ? (CONFIG.personA || 'Person A') : currentUser === 'b' ? (CONFIG.personB || 'Person B') : '—';
+    signedInEl.textContent = myName;
+  }
 }
 
 function editName(person) {
@@ -1715,6 +1777,8 @@ async function fetchConfigFromSheet() {
       if (c.person_b)         CONFIG.personB        = c.person_b;
       if (c.currency)         CONFIG.currency       = c.currency;
       if (c.currency_symbol)  CONFIG.currencySymbol = c.currency_symbol;
+      if (c.person_a_emails)  CONFIG.personAEmails  = String(c.person_a_emails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      if (c.person_b_emails)  CONFIG.personBEmails  = String(c.person_b_emails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
       if (c.gs_version) {
         const el = document.getElementById('gs-version-val');
         if (el) el.textContent = c.gs_version;
@@ -1756,21 +1820,124 @@ async function syncFromSheets() {
   }
 }
 
-// ── BOOT ─────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+// ── GOOGLE AUTH ──────────────────────────────────────
+function initAuth() {
+  function tryInit() {
+    if (typeof google !== 'undefined' && google.accounts) {
+      google.accounts.id.initialize({
+        client_id: CONFIG.googleClientId,
+        callback: onGoogleSignIn,
+        auto_select: false,
+      });
+      google.accounts.id.renderButton(
+        document.getElementById('signin-google-btn'),
+        { theme: 'outline', size: 'large', shape: 'pill', text: 'sign_in_with' }
+      );
+    } else {
+      setTimeout(tryInit, 200);
+    }
+  }
+  tryInit();
+}
+
+async function onGoogleSignIn(response) {
+  const signinError = document.getElementById('signin-error');
+  const signinLoading = document.getElementById('signin-loading');
+  signinError.style.display = 'none';
+  signinLoading.style.display = 'block';
+
+  // If email lists not loaded yet, fetch config first
+  if (!CONFIG.personAEmails.length && !CONFIG.personBEmails.length) {
+    await fetchConfigFromSheet();
+  }
+
+  const payload = decodeJWT(response.credential);
+  const email = (payload.email || '').toLowerCase();
+
+  signinLoading.style.display = 'none';
+
+  const aEmails = CONFIG.personAEmails.map(e => e.toLowerCase());
+  const bEmails = CONFIG.personBEmails.map(e => e.toLowerCase());
+
+  if (aEmails.includes(email)) {
+    setCurrentUser('a');
+  } else if (bEmails.includes(email)) {
+    setCurrentUser('b');
+  } else {
+    signinError.textContent = `${email} is not authorised to use this app.`;
+    signinError.style.display = 'block';
+    google.accounts.id.disableAutoSelect();
+  }
+}
+
+function decodeJWT(token) {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64));
+  } catch(e) { return {}; }
+}
+
+function setCurrentUser(who) {
+  currentUser = who;
+  localStorage.setItem('splitapp_user', who);
+  showApp();
+}
+
+function showApp() {
+  document.getElementById('signin-screen').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  initApp();
+  fetchBestGeminiModel();
+  syncFromSheets();
+}
+
+function showSignIn() {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('signin-screen').style.display = 'flex';
+  document.getElementById('signin-error').style.display = 'none';
+  initAuth();
+}
+
+function signOut() {
+  currentUser = null;
+  localStorage.removeItem('splitapp_user');
+  if (typeof google !== 'undefined' && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
+  showSignIn();
+}
+
+function initApp() {
   init();
   initManualItems();
   updateWhoPayNames();
   ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
-  // Fetch config → best Gemini model → sync bills
-  fetchConfigFromSheet().then(() => {
-    fetchBestGeminiModel();
-    syncFromSheets();
-  });
+}
 
-  // Sync when app comes back to foreground
+// ── BOOT ─────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  currentUser = localStorage.getItem('splitapp_user') || null;
+
+  if (currentUser) {
+    // Already signed in — show app immediately from localStorage
+    document.getElementById('signin-screen').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    initApp();
+    // Fetch config + sync in background
+    fetchConfigFromSheet().then(() => {
+      fetchBestGeminiModel();
+      syncFromSheets();
+    });
+  } else {
+    // Not signed in — show sign-in screen
+    // Fetch config in background so email lists are ready when user signs in
+    fetchConfigFromSheet();
+    initAuth();
+  }
+
+  // Sync when app comes back to foreground (only if signed in)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') syncFromSheets();
+    if (document.visibilityState === 'visible' && currentUser) syncFromSheets();
   });
 });
 </script>
