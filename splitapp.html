@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.8.4 (2026-06-14)
+    - Fix #17: Gemini model picker now excludes tts, embedding, aqa models — only vision-capable flash models considered
   v1.8.3 (2026-06-14)
     - Fix #18: "Please keep this page open" on scan overlay now larger (17px bold) than "Reading receipt..."
     - Fix #19: date input now styled consistently with other form fields (added input[type=date] to CSS rule)
@@ -489,7 +491,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.3</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.8.4</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1868,13 +1870,17 @@ async function fetchBestGeminiModel() {
     if (!resp.ok) return;
     const data = await resp.json();
 
-    // Filter flash models that support generateContent
+    // Filter flash models that support generateContent; exclude non-vision models
     const flashModels = (data.models || [])
-      .filter(m =>
-        m.name.toLowerCase().includes('flash') &&
-        (m.supportedGenerationMethods || []).includes('generateContent') &&
-        !m.name.toLowerCase().includes('lite') // prefer full flash over lite
-      )
+      .filter(m => {
+        const n = m.name.toLowerCase();
+        return n.includes('flash') &&
+          (m.supportedGenerationMethods || []).includes('generateContent') &&
+          !n.includes('lite') &&   // prefer full flash over lite
+          !n.includes('tts') &&    // exclude text-to-speech models
+          !n.includes('embedding') && // exclude embedding models
+          !n.includes('aqa');      // exclude attributed question answering models
+      })
       .map(m => m.name.replace('models/', ''))
       .sort((a, b) => {
         // Sort by version number descending (e.g. gemini-3.5 > gemini-2.5)
