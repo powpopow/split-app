@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.6.0 (2026-06-14)
+    - Settings (person names, currency) now sync to Google Sheets Config tab
+    - All devices load the same names and currency on startup via fetchConfigFromSheet
+    - Added callSetConfig() helper for writing key/value to Config tab
+
   v1.5.0 (2026-06-14)
     - Cross-phone sync: sync from Sheets on foreground (visibilitychange)
     - Cross-phone sync: sync from Sheets after saving a bill
@@ -395,7 +400,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.5.0</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.6.0</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
@@ -961,6 +966,7 @@ function saveName(person) {
   saveToStorage();
   updateSettingsUI();
   closeSheet();
+  callSetConfig(person === 'a' ? 'person_a' : 'person_b', val);
 }
 
 function openGSheet() {
@@ -1004,6 +1010,8 @@ function closeSheet(e) {
 function setCurrency(code, sym) {
   CONFIG.currency = code; CONFIG.currencySymbol = sym;
   saveToStorage(); updateSettingsUI(); closeSheet();
+  callSetConfig('currency', code);
+  callSetConfig('currency_symbol', sym);
 }
 
 // ── NEW BILL: CAPTURE ─────────────────────────────────
@@ -1674,13 +1682,31 @@ async function fetchBestGeminiModel() {
 }
 
 // ── FETCH GEMINI KEY FROM CONFIG TAB ─────────────────
+async function callSetConfig(key, value) {
+  if (!CONFIG.googleSheetUrl) return;
+  try {
+    await fetch(CONFIG.googleSheetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setConfig', key, value }),
+    });
+  } catch(e) {
+    console.warn('setConfig failed:', e);
+  }
+}
+
 async function fetchConfigFromSheet() {
   if (!CONFIG.googleSheetUrl) return;
   try {
     const resp = await fetch(CONFIG.googleSheetUrl + '?action=getConfig');
     const data = await resp.json();
-    if (data.config && data.config.gemini_key) {
-      CONFIG.geminiApiKey = data.config.gemini_key;
+    if (data.config) {
+      const c = data.config;
+      if (c.gemini_key)       CONFIG.geminiApiKey   = c.gemini_key;
+      if (c.person_a)         CONFIG.personA        = c.person_a;
+      if (c.person_b)         CONFIG.personB        = c.person_b;
+      if (c.currency)         CONFIG.currency       = c.currency;
+      if (c.currency_symbol)  CONFIG.currencySymbol = c.currency_symbol;
       updateSettingsUI();
     }
   } catch(e) {
