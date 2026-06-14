@@ -1,2264 +1,257 @@
-<!--
-  SplitApp — Personal expense splitter
-  ════════════════════════════════════════
-  CHANGELOG
-  v1.9.0 (2026-06-14)
-    - Feature #15: Home avatars now stack (current user on top). Tap back avatar to switch perspective instantly — no sign-out required. Balance, greeting, and item order all flip to the other person's POV.
-    - PWA: added apple-mobile-web-app-capable meta tags so app hides Safari/Chrome browser UI when launched from home screen
-    - Fix: Settings app version now reads correctly (was hardcoded and missed bumps)
-  v1.8.9 (2026-06-14)
-    - Feature #11: Grand total row added to Review screen Charges card
-    - OCR receipt total stored and compared to calculated total (shows ✓ or ⚠ with ฿1 tolerance)
-  v1.8.8 (2026-06-14)
-    - Rename "50/50" to "Shared" throughout (chip, dropdown, bill detail)
-  v1.8.7 (2026-06-14)
-    - Fix: dropdown dot colors now match chip colors (Powpow = teal, Pat = orange-brown)
-    - Fix: Review screen subtitle updated to "▾ for more options" (was "··· for custom %")
-  v1.8.6 (2026-06-14)
-    - Fix #24: Edit bill now correctly navigates to newbill screen (was goTo('entry') → screen not found → blank page)
-  v1.8.5 (2026-06-14)
-    - Feature #12: Assignment chip split into cycle (left) + dropdown ▾ (right)
-    - Cycle order is now perspective-aware: current user's name comes first after Shared
-    - Dropdown options: nameA / nameB / Shared / Custom % (opens existing custom split sheet)
-    - Custom % assignment now shows actual split ratio on chip (e.g. 70/30)
-    - Click outside closes dropdown
-  v1.8.4 (2026-06-14)
-    - Fix #17: Gemini model picker now excludes tts, embedding, aqa models — only vision-capable flash models considered
-  v1.8.3 (2026-06-14)
-    - Fix #18: "Please keep this page open" on scan overlay now larger (17px bold) than "Reading receipt..."
-    - Fix #19: date input now styled consistently with other form fields (added input[type=date] to CSS rule)
-    - Fix #20: review screen padding-bottom increased to 240px — charges no longer hidden behind fixed totals panel
-    - Fix #21: removed duplicate restaurant name from bill detail content (already shown in page header)
-    - Fix #9: fmtDate() now handles ISO datetime strings from Sheets; syncFromSheets normalises date to YYYY-MM-DD
-  v1.8.2 (2026-06-14)
-    - Fix #13/#15: Bill detail is now a full page (screen-bill-detail) with ← History back button, replacing bottom sheet
-    - Delete navigates cleanly back to History (no DOM layout issues)
-  v1.8.1 (2026-06-14)
-    - Fix #14: edit button now correctly calls switchBillTab('manual') instead of missing showTab()
-    - Fix #16: updateWhoPayNames() now called inside updateSettingsUI() so Who Paid buttons stay current after config loads
-  v1.8.0 (2026-06-14)
-    - Bug #8: items_json stored in Sheets on save, parsed on sync
-    - Bug #7: History rows tappable — detail sheet shows items, totals, paid by
-    - Feature #7: Delete bill (calls Sheets API), Edit bill (pre-fills form, updates row)
-  v1.7.2 (2026-06-14)
-    - Avatar icons: hardcoded CJ (navy) and PP (teal) replacing letter initials
-  v1.7.1 (2026-06-14)
-    - Sign-in screen redesign: teal background, white card, SVG icon, "Welcome" tagline
-
-  v1.7.0 (2026-06-14)
-    - Google auth login via Google Identity Services (client-side OAuth)
-    - Sign-in screen shown before app if not authenticated
-    - Email-based identity: person_a_emails / person_b_emails in Config tab (comma-separated)
-    - currentUser stored in localStorage ('a' or 'b') after sign-in
-    - Home screen greets current user by name, shows balance from their perspective
-    - Settings: Account section with "Signed in as" and "Sign out"
-    - Unrecognised email → Access denied message
-
-  v1.6.2 (2026-06-14)
-    - Fix: CORS preflight error on POST to Apps Script
-      Removed Content-Type: application/json header, added mode: no-cors
-      Affected both syncToSheets (addBill) and callSetConfig (settings sync)
-
-  v1.6.1 (2026-06-14)
-    - Settings now shows Backend version (fetched from Apps Script on load)
-
-  v1.6.0 (2026-06-14)
-    - Settings (person names, currency) now sync to Google Sheets Config tab
-    - All devices load the same names and currency on startup via fetchConfigFromSheet
-    - Added callSetConfig() helper for writing key/value to Config tab
-
-  v1.5.0 (2026-06-14)
-    - Cross-phone sync: sync from Sheets on foreground (visibilitychange)
-    - Cross-phone sync: sync from Sheets after saving a bill
-
-  v1.4.2 (2026-06-14)
-    - Fix: "Open Google Sheet" in Settings now opens the actual spreadsheet
-      instead of the Apps Script endpoint URL
-
-  v1.4.1 (2026-06-14)
-    - Fix: "Next →" button on Review screen hidden behind bottom nav bar
-      (changed fixed panel bottom from 0 to calc(--nav-h + --safe-b))
-
-  v1.4.0 (2026-06-14)
-    - OCR now pre-fills manual entry form (date, place, category, items) instead of jumping to Review
-    - User can review, edit, add, delete items before proceeding
-    - Who paid selection now always available before Review
-    - Empty OCR result lands on manual form for user to complete
-
-  v1.3.1 (2026-06-14)
-    - Scan screen: cycling status messages with timing
-    - Auto-retry with next model on failure, shown inline (no abrupt error)
-    - "Keep this page open" warning during scan
-    - Error shown to user only if all models fail
-
-  v1.3.0 (2026-06-14)
-    - Dynamic Gemini model selection with automatic fallback
-    - On load: fetches available models, picks newest Flash, falls back if unavailable
-    - No manual model maintenance needed
-
-  v1.2.1 (2026-06-14)
-    - Fixed: updated Gemini model from retired gemini-2.0-flash to gemini-2.5-flash
-
-  v1.2.0 (2026-06-14)
-    - Sheet URL hardcoded in CONFIG (not a secret)
-    - Gemini API key fetched from Config tab in Google Sheet on app load
-    - Removed Integrations section from Settings (no manual key entry needed)
-    - App works on any device without setup
-
-  v1.1.0 (2026-06-14)
-    - Removed hardcoded API keys from source code
-    - API key and Sheet URL now entered via Settings → Integrations, stored in localStorage
-    - App now syncs from Google Sheets on load (Sheets = source of truth)
-    - Added version changelog block
-
-  v1.0.0 (2026-06-14)
-    - Initial release
-    - Dashboard, History, Summary, Settings screens
-    - New Bill flow: Capture (OCR + manual), Review & Assign, Confirm & Save
-    - Gemini Vision OCR for receipt scanning
-    - Google Sheets sync
-    - Running balance ledger
-    - Per-item assignment with custom split %
-    - Service charge, VAT, discount, cash voucher charge pipeline
--->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="SplitApp">
-<meta name="mobile-web-app-capable" content="yes">
-<title>SplitApp</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<style>
-/* ── CONFIG ─────────────────────────────────────────── */
-:root {
-  --acc: #63A39B;
-  --acc-light: #EAF4F2;
-  --acc-dark: #4a7d77;
-  --acc-text: #2a6b64;
-  --red: #E05454;
-  --red-light: #FCEAEA;
-  --grn: #2D9B5E;
-  --grn-light: #E8F7EE;
-  --bg: #F5FAF9;
-  --card: #ffffff;
-  --border: #e0e8e7;
-  --text: #1a1a1a;
-  --text2: #666666;
-  --text3: #aaaaaa;
-  --nav-h: 60px;
-  --safe-b: env(safe-area-inset-bottom, 0px);
-}
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; overflow: hidden; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
-}
-
-/* ── LAYOUT ─────────────────────────────────────────── */
-#app { height: 100dvh; display: flex; flex-direction: column; }
-.screen { display: none; flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px); }
-.screen.active { display: block; }
-.nav { height: var(--nav-h); background: var(--card); border-top: 0.5px solid var(--border); display: flex; align-items: center; flex-shrink: 0; padding-bottom: var(--safe-b); position: relative; z-index: 10; }
-.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; color: var(--text3); cursor: pointer; padding: 4px 0; transition: color 0.15s; }
-.nav-item.active { color: var(--acc); }
-.nav-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.nav-fab-wrap { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-.nav-fab { width: 46px; height: 46px; background: var(--acc); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(99,163,155,0.35); }
-.nav-fab svg { width: 24px; height: 24px; fill: none; stroke: white; stroke-width: 2.2; stroke-linecap: round; }
-
-/* ── COMPONENTS ─────────────────────────────────────── */
-.page-header { padding: 14px 16px 8px; }
-.page-title { font-size: 20px; font-weight: 600; color: var(--text); }
-.page-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
-.back-btn { display: flex; align-items: center; gap: 4px; color: var(--acc); font-size: 13px; cursor: pointer; margin-bottom: 4px; }
-.back-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-
-.card { background: var(--card); border-radius: 14px; margin: 0 12px 10px; border: 0.5px solid var(--border); overflow: hidden; }
-.card-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; gap: 10px; }
-.card-row + .card-row { border-top: 0.5px solid var(--border); }
-.row-label { font-size: 14px; color: var(--text); }
-.row-val { font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
-.row-val svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; opacity: 0.5; }
-.sec-label { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 16px 4px; }
-
-.btn { display: block; width: calc(100% - 24px); margin: 6px 12px; padding: 14px; background: var(--acc); color: white; border: none; border-radius: 14px; font-size: 15px; font-weight: 500; cursor: pointer; text-align: center; }
-.btn:active { opacity: 0.85; }
-.btn.outline { background: transparent; color: var(--acc); border: 1.5px solid var(--acc); }
-.btn.danger { background: var(--red); }
-
-/* Avatar */
-.avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; letter-spacing: 0.5px; }
-.av-a { background: #2E3250; color: #fff; }
-.av-b { background: var(--acc); color: #fff; }
-
-/* Tags */
-.chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; cursor: pointer; user-select: none; }
-.chip-a { background: var(--acc-light); color: var(--acc-text); }
-.chip-b { background: #FFF0E6; color: #a0623a; }
-.chip-shared { background: #f0f0f0; color: #555; }
-/* Split assignment chip */
-.assign-chip { display: inline-flex; align-items: center; border-radius: 12px; font-size: 12px; font-weight: 500; user-select: none; overflow: hidden; }
-.assign-chip .chip-cycle { padding: 4px 8px 4px 10px; cursor: pointer; }
-.assign-chip .chip-divider { width: 0.5px; align-self: stretch; opacity: 0.35; background: currentColor; }
-.assign-chip .chip-dd-btn { padding: 4px 8px 4px 6px; cursor: pointer; font-size: 10px; }
-.assign-chip.chip-a { background: var(--acc-light); color: var(--acc-text); }
-.assign-chip.chip-b { background: #FFF0E6; color: #a0623a; }
-.assign-chip.chip-shared { background: #f0f0f0; color: #555; }
-.assign-chip.chip-custom { background: #f5f0ff; color: #5340b0; }
-/* Assignment dropdown */
-.assign-dd-wrap { position: relative; display: inline-flex; align-items: center; }
-.assign-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 4px); background: var(--card); border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; z-index: 100; min-width: 130px; }
-.assign-dropdown.open { display: block; }
-.assign-dd-opt { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px; color: var(--text); cursor: pointer; border-bottom: 0.5px solid var(--border); }
-.assign-dd-opt:last-child { border-bottom: none; }
-.assign-dd-opt:active { background: var(--bg); }
-.assign-dd-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-
-/* Badge */
-.badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 8px; font-size: 11px; font-weight: 500; }
-.badge-grn { background: var(--grn-light); color: var(--grn); }
-.badge-red { background: var(--red-light); color: var(--red); }
-.badge-acc { background: var(--acc-light); color: var(--acc-text); }
-
-/* Toggle */
-.toggle { width: 40px; height: 24px; background: #ccc; border-radius: 12px; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
-.toggle.on { background: var(--acc); }
-.toggle::after { content:''; position:absolute; width:20px; height:20px; background:white; border-radius:50%; top:2px; left:2px; transition:left 0.2s; }
-.toggle.on::after { left:18px; }
-
-/* Input */
-input[type=text], input[type=number], input[type=date], textarea, select {
-  border: 0.5px solid var(--border); border-radius: 10px; padding: 10px 12px;
-  font-size: 14px; width: 100%; background: var(--card); color: var(--text);
-  font-family: inherit; outline: none;
-}
-input:focus, textarea:focus, select:focus { border-color: var(--acc); }
-textarea { resize: none; }
-
-/* Pill tabs */
-.pill-tabs { display: flex; gap: 6px; padding: 6px 12px; }
-.pill-tab { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 13px; cursor: pointer; border: 0.5px solid var(--border); background: var(--card); color: var(--text2); transition: all 0.15s; }
-.pill-tab.active { background: var(--acc); color: white; border-color: var(--acc); }
-
-/* Who paid toggle */
-.who-paid { display: flex; gap: 8px; }
-.who-btn { flex: 1; padding: 10px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--card); text-align: center; cursor: pointer; transition: all 0.15s; }
-.who-btn .wb-name { font-size: 14px; font-weight: 500; }
-.who-btn .wb-check { font-size: 10px; margin-top: 2px; color: var(--text3); }
-.who-btn.active-a { border-color: var(--acc); background: var(--acc-light); }
-.who-btn.active-a .wb-check { color: var(--acc); }
-.who-btn.active-b { border-color: #a0623a; background: #FFF0E6; }
-.who-btn.active-b .wb-check { color: #a0623a; }
-
-/* Bottom sheet */
-.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; display: none; align-items: flex-end; }
-.sheet-overlay.open { display: flex; }
-.sheet { background: var(--card); border-radius: 20px 20px 0 0; width: 100%; max-width: 430px; padding: 12px 16px calc(16px + var(--safe-b)); }
-.sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 14px; }
-.sheet-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-.sheet-option { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; cursor: pointer; }
-.sheet-option + .sheet-option { border-top: 0.5px solid var(--border); }
-.sheet-option .so-label { font-size: 14px; }
-.sheet-option .so-check { color: var(--acc); font-size: 16px; display: none; }
-.sheet-option.sel .so-check { display: block; }
-
-/* Scan overlay */
-.scan-overlay { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 200; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-.scan-overlay.open { display: flex; }
-.scan-spinner { width: 52px; height: 52px; border: 3px solid var(--acc-light); border-top-color: var(--acc); border-radius: 50%; animation: spin 0.9s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.scan-step { font-size: 13px; color: var(--text2); }
-
-/* Delete confirm */
-.del-row { position: relative; overflow: hidden; }
-.del-action { position: absolute; right: 0; top: 0; bottom: 0; background: var(--red); color: white; display: flex; align-items: center; padding: 0 18px; font-size: 13px; transform: translateX(100%); transition: transform 0.2s; }
-.del-row.swiped .del-action { transform: translateX(0); }
-
-/* Category icon colors */
-.cat-food { background: #FFF0E6; color: #c06a2a; }
-.cat-shop { background: #E8F0FF; color: #4a6abf; }
-.cat-cafe { background: #F0EAF8; color: #8a4abf; }
-.cat-transport { background: #E8FFE8; color: #2a8a2a; }
-.cat-other { background: #F0F0F0; color: #666; }
-.cat-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
-
-/* Amount colors */
-.amt-grn { color: var(--grn); font-weight: 500; }
-.amt-red { color: var(--red); font-weight: 500; }
-
-/* Chart */
-.donut-wrap { display: flex; align-items: center; gap: 14px; }
-.bar-group { display: flex; align-items: flex-end; gap: 4px; }
-.bar { border-radius: 3px 3px 0 0; }
-</style>
-</head>
-<body>
-
-<!-- ════════════════════════════════════════════════════
-     CONFIG — fill these in before deploying
-════════════════════════════════════════════════════ -->
-<script>
-const CONFIG = {
-  geminiApiKey: '',         // Fetched from Config tab in Google Sheet on load
-  googleSheetUrl: 'https://script.google.com/macros/s/AKfycbz_rQoPkoHaqa0nT5RIjHRfjMN34VRvwL-VKXvJsTaBqz5cSVN14N-fAJh98ATGNUqpaA/exec',
-  googleSheetEditUrl: 'https://docs.google.com/spreadsheets/d/1lwtr9H-Gg1QaDUTpxW7uiT_3nmaXlEQ6ExJa2Sg5b2c/edit',
-  googleClientId: '1095947409464-uf5j6j4q1jkdcsj7cksst7r1j8da09ii.apps.googleusercontent.com',
-  personA: '',
-  personB: '',
-  personAEmails: [],
-  personBEmails: [],
-  currency: 'THB',
-  currencySymbol: '฿',
-};
-</script>
-
-<!-- ════════════════════════════════════════════════════
-     SIGN-IN SCREEN
-════════════════════════════════════════════════════ -->
-<div id="signin-screen" style="display:flex; position:fixed; inset:0; background:var(--acc); z-index:1000; flex-direction:column;">
-  <!-- Top: branding -->
-  <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:40px 32px 0;">
-    <div style="width:60px; height:60px; background:rgba(255,255,255,0.2); border-radius:18px; display:flex; align-items:center; justify-content:center;">
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="5" width="20" height="14" rx="2"/>
-        <line x1="2" y1="10" x2="22" y2="10"/>
-        <line x1="12" y1="10" x2="12" y2="19"/>
-      </svg>
-    </div>
-    <div style="font-size:28px; font-weight:700; color:white; letter-spacing:-0.5px;">SplitApp</div>
-    <div style="font-size:14px; color:rgba(255,255,255,0.7);">Welcome</div>
-  </div>
-  <!-- Bottom: white card -->
-  <div style="margin:32px 20px calc(32px + env(safe-area-inset-bottom,0px)); background:white; border-radius:24px; padding:28px 24px; display:flex; flex-direction:column; align-items:center; gap:16px;">
-    <div style="font-size:15px; font-weight:600; color:#1a1a1a;">Sign in to continue</div>
-    <div id="signin-google-btn" style="width:100%; display:flex; justify-content:center;"></div>
-    <div id="signin-loading" style="display:none; font-size:13px; color:#888;">Signing in…</div>
-    <div id="signin-error" style="display:none; font-size:12px; color:#E05454; text-align:center; line-height:1.6; background:#FCEAEA; border-radius:10px; padding:10px 14px; width:100%;"></div>
-    <div style="font-size:11px; color:#aaa; text-align:center;">Authorised members only</div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════
-     APP SHELL
-════════════════════════════════════════════════════ -->
-<div id="app" style="display:none;">
-
-  <!-- ── SCREENS ─────────────────────────────────────── -->
-
-  <!-- HOME / DASHBOARD -->
-  <div id="screen-home" class="screen active">
-    <div style="padding:16px 16px 6px; display:flex; justify-content:space-between; align-items:flex-start;">
-      <div>
-        <div style="font-size:13px; color:var(--text2);" id="home-greeting">Hi there</div>
-        <div style="font-size:12px; color:var(--text3);" id="home-date"></div>
-      </div>
-      <div style="display:flex; gap:6px;" id="home-avatars"></div>
-    </div>
-
-    <!-- Balance card -->
-    <div id="balance-card" style="margin:6px 12px 10px; border-radius:14px; padding:14px 16px; background:var(--acc);">
-      <div style="font-size:10px; color:rgba(255,255,255,0.7); font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Running balance</div>
-      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:4px;">
-        <div>
-          <div style="font-size:32px; font-weight:600; color:white; line-height:1.1;" id="balance-amount">฿0</div>
-          <div style="font-size:13px; color:rgba(255,255,255,0.85); margin-top:3px;" id="balance-label">All settled up</div>
-        </div>
-        <div style="font-size:11px; color:rgba(255,255,255,0.6);" id="balance-count"></div>
-      </div>
-      <div style="display:flex; gap:8px; margin-top:10px;">
-        <div onclick="showBreakdown()" style="background:rgba(255,255,255,0.18); color:white; font-size:11px; padding:4px 10px; border-radius:10px; cursor:pointer;">Breakdown</div>
-        <div onclick="shareBalance()" style="background:rgba(255,255,255,0.18); color:white; font-size:11px; padding:4px 10px; border-radius:10px; cursor:pointer;">Share</div>
-      </div>
-    </div>
-
-    <!-- Stat tiles -->
-    <div style="display:flex; gap:8px; margin:0 12px 10px;">
-      <div style="flex:1; background:var(--card); border-radius:12px; padding:10px 12px; border:0.5px solid var(--border);">
-        <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">Bills this month</div>
-        <div style="font-size:18px; font-weight:600;" id="stat-bills">0</div>
-      </div>
-      <div style="flex:1; background:var(--card); border-radius:12px; padding:10px 12px; border:0.5px solid var(--border);">
-        <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">Total spent</div>
-        <div style="font-size:18px; font-weight:600;" id="stat-total">฿0</div>
-      </div>
-    </div>
-
-    <!-- Recent bills -->
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 16px 4px;">
-      <div style="font-size:11px; font-weight:600; color:var(--text3); letter-spacing:0.06em; text-transform:uppercase;">Recent bills</div>
-      <div onclick="goTo('history')" style="font-size:12px; color:var(--acc); cursor:pointer;">See all</div>
-    </div>
-    <div class="card" style="margin-top:0;">
-      <div id="recent-bills-list">
-        <div style="padding:24px 16px; text-align:center; color:var(--text3); font-size:13px;">No bills yet. Tap + to add your first bill.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- HISTORY -->
-  <div id="screen-history" class="screen">
-    <div class="page-header"><div class="page-title">History</div></div>
-    <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
-      <div class="chip chip-a" style="white-space:nowrap;" onclick="filterHistory('all')" id="hf-all">All time</div>
-      <div class="chip chip-shared" style="white-space:nowrap;" onclick="filterHistory('month')" id="hf-month">This month</div>
-    </div>
-    <div id="history-list"></div>
-  </div>
-
-  <!-- BILL DETAIL -->
-  <div id="screen-bill-detail" class="screen">
-    <div class="page-header">
-      <div class="back-btn" onclick="goTo('history')">← History</div>
-      <div class="page-title" id="bill-detail-title"></div>
-    </div>
-    <div id="bill-detail-content" style="padding:0 12px 24px;"></div>
-  </div>
-
-  <!-- SUMMARY -->
-  <div id="screen-summary" class="screen">
-    <div class="page-header"><div class="page-title">Summary</div></div>
-    <div style="display:flex; gap:6px; padding:0 12px 8px;">
-      <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month">This month</div>
-      <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m">3 months</div>
-      <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all">All time</div>
-    </div>
-
-    <!-- Category donut -->
-    <div class="card" style="padding:14px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <div class="sec-label" style="padding:0; margin:0;">By category</div>
-        <div style="display:flex; gap:4px;" id="person-filter">
-          <div class="chip chip-a" onclick="setPersonFilter('both')" id="pf-both">Both</div>
-          <div class="chip chip-shared" onclick="setPersonFilter('a')" id="pf-a" style="font-size:11px;"></div>
-          <div class="chip chip-shared" onclick="setPersonFilter('b')" id="pf-b" style="font-size:11px;"></div>
-        </div>
-      </div>
-      <div class="donut-wrap">
-        <svg id="donut-svg" width="110" height="110" viewBox="0 0 110 110" style="flex-shrink:0;"></svg>
-        <div id="donut-legend" style="flex:1; display:flex; flex-direction:column; gap:7px;"></div>
-      </div>
-    </div>
-
-    <!-- Monthly bar chart -->
-    <div class="card" style="padding:14px;">
-      <div class="sec-label" style="padding:0 0 10px;">Monthly spending</div>
-      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:6px; height:90px;"></div>
-      <div style="display:flex; gap:14px; margin-top:8px; justify-content:center;">
-        <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
-          <div style="width:8px;height:8px;border-radius:2px;background:var(--acc);"></div>
-          <span id="legend-a">Person A</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
-          <div style="width:8px;height:8px;border-radius:2px;background:#a0e0d8;"></div>
-          <span id="legend-b">Person B</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Who paid more -->
-    <div class="card" style="padding:14px;">
-      <div class="sec-label" style="padding:0 0 10px;">Who paid more</div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <div style="font-size:12px; color:var(--text2); min-width:36px; text-align:right;" id="wpm-a-name">A</div>
-        <div style="flex:1; height:8px; border-radius:4px; overflow:hidden; background:#e8f0ef; position:relative;">
-          <div id="wpm-bar" style="position:absolute; left:0; top:0; bottom:0; width:50%; background:var(--acc); border-radius:4px; transition:width 0.4s;"></div>
-        </div>
-        <div style="font-size:12px; color:var(--text2); min-width:36px;" id="wpm-b-name">B</div>
-      </div>
-      <div style="display:flex; justify-content:space-between; margin-top:6px; padding:0 44px;">
-        <div style="font-size:12px; font-weight:500; color:var(--acc);" id="wpm-a-amt">฿0</div>
-        <div style="font-size:12px; font-weight:500; color:#a0623a;" id="wpm-b-amt">฿0</div>
-      </div>
-      <div style="font-size:11px; color:var(--text3); text-align:center; margin-top:6px;" id="wpm-label"></div>
-    </div>
-  </div>
-
-  <!-- SETTINGS -->
-  <div id="screen-settings" class="screen">
-    <div class="page-header"><div class="page-title">Settings</div></div>
-
-    <div class="sec-label">Group members</div>
-    <div class="card">
-      <div class="card-row" onclick="editName('a')" style="cursor:pointer;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div class="avatar av-a" id="av-a-settings">?</div>
-          <div>
-            <div style="font-size:12px; color:var(--text3);">Person A</div>
-            <div style="font-size:14px; font-weight:500;" id="name-a-settings">Tap to set name</div>
-          </div>
-        </div>
-        <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-      <div class="card-row" onclick="editName('b')" style="cursor:pointer;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div class="avatar av-b" id="av-b-settings">?</div>
-          <div>
-            <div style="font-size:12px; color:var(--text3);">Person B</div>
-            <div style="font-size:14px; font-weight:500;" id="name-b-settings">Tap to set name</div>
-          </div>
-        </div>
-        <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-    </div>
-
-    <div class="sec-label">Preferences</div>
-    <div class="card">
-      <div class="card-row" onclick="openSheet('currency')" style="cursor:pointer;">
-        <div class="row-label">Currency</div>
-        <div class="row-val" id="currency-val">THB ฿ <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-    </div>
-
-    <div class="sec-label">Account</div>
-    <div class="card">
-      <div class="card-row">
-        <div class="row-label">Signed in as</div>
-        <div class="row-val" id="signed-in-name" style="font-size:13px;">—</div>
-      </div>
-      <div class="card-row" onclick="signOut()" style="cursor:pointer;">
-        <div class="row-label" style="color:var(--red);">Sign out</div>
-        <div class="row-val"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
-      </div>
-    </div>
-
-    <div class="sec-label">About</div>
-    <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.0</div></div>
-      <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
-      <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
-        <div class="row-label">Open Google Sheet</div>
-        <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-      </div>
-      <div class="card-row">
-        <div class="row-label">Receipt OCR</div>
-        <div class="row-val" id="ocr-status"><span class="badge badge-acc">Loading…</span></div>
-      </div>
-    </div>
-    <div style="height:8px;"></div>
-  </div>
-
-  <!-- NEW BILL: STEP 1 — CAPTURE -->
-  <div id="screen-newbill" class="screen" style="padding-bottom:20px;">
-    <div class="page-header">
-      <div class="back-btn" onclick="goTo('home')">
-        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        Cancel
-      </div>
-      <div class="page-title">New bill</div>
-    </div>
-
-    <div class="pill-tabs">
-      <div class="pill-tab active" id="tab-upload" onclick="switchBillTab('upload')">Upload receipt</div>
-      <div class="pill-tab" id="tab-manual" onclick="switchBillTab('manual')">Manual entry</div>
-    </div>
-
-    <!-- Upload tab -->
-    <div id="panel-upload">
-      <div onclick="triggerPhotoUpload()" style="margin:10px 12px; background:var(--card); border-radius:14px; border:1.5px dashed var(--border); padding:28px 16px; text-align:center; cursor:pointer;">
-        <div style="font-size:32px; margin-bottom:8px;">📷</div>
-        <div style="font-size:14px; font-weight:500; color:var(--text2);">Snap or upload receipt</div>
-        <div style="font-size:12px; color:var(--text3); margin-top:4px;">Gemini AI reads items, prices & charges</div>
-        <input type="file" id="photo-input" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event)">
-      </div>
-      <div style="margin:0 12px 10px; padding:10px 12px; background:var(--acc-light); border-radius:12px; font-size:12px; color:var(--acc-text);">
-        ✓ Date &nbsp; ✓ Place &nbsp; ✓ Items & prices &nbsp; ✓ VAT & service charge
-      </div>
-    </div>
-
-    <!-- Manual tab -->
-    <div id="panel-manual" style="display:none;">
-      <div class="sec-label">Date</div>
-      <div style="padding:0 12px 8px;"><input type="date" id="bill-date" style="width:100%;"></div>
-
-      <div class="sec-label">Place / description</div>
-      <div style="padding:0 12px 8px;"><input type="text" id="bill-place" placeholder="e.g. Somtum Der, Big C…"></div>
-
-      <div class="sec-label">Category <span style="font-weight:400;color:var(--text3);">(optional)</span></div>
-      <div style="padding:0 12px 8px;">
-        <select id="bill-category">
-          <option value="">Select…</option>
-          <option value="food">Food & drink</option>
-          <option value="shop">Shopping</option>
-          <option value="cafe">Café</option>
-          <option value="transport">Transport</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
-      <div class="sec-label">Items</div>
-      <div class="card" style="margin-top:0;">
-        <div id="manual-items"></div>
-        <div class="card-row" onclick="addManualItem()" style="cursor:pointer; color:var(--acc);">
-          <div style="font-size:14px;">+ Add item</div>
-        </div>
-      </div>
-
-      <div class="sec-label">Who paid?</div>
-      <div class="who-paid" style="padding:0 12px 12px;" id="who-paid-manual">
-        <div class="who-btn active-a" id="wb-manual-a" onclick="setWhoPaid('manual','a')">
-          <div class="wb-name" id="wb-manual-a-name">Person A</div>
-          <div class="wb-check">✓ selected</div>
-        </div>
-        <div class="who-btn" id="wb-manual-b" onclick="setWhoPaid('manual','b')">
-          <div class="wb-name" id="wb-manual-b-name">Person B</div>
-          <div class="wb-check">✓ selected</div>
-        </div>
-      </div>
-
-      <button class="btn" onclick="goToReview('manual')">Next →</button>
-    </div>
-  </div>
-
-  <!-- NEW BILL: STEP 2 — REVIEW & ASSIGN -->
-  <div id="screen-review" class="screen" style="padding-bottom:240px;">
-    <div class="page-header">
-      <div class="back-btn" onclick="goTo('newbill')">
-        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        Back
-      </div>
-      <div class="page-title">Review & assign</div>
-      <div style="font-size:12px; color:var(--text3); margin-top:2px;">Tap chip to cycle · ▾ for more options</div>
-    </div>
-
-    <!-- Bill meta -->
-    <div class="card" style="margin-top:0;">
-      <div class="card-row">
-        <div>
-          <div style="font-size:15px; font-weight:500;" id="rv-place">—</div>
-          <div style="font-size:12px; color:var(--text3);" id="rv-meta">—</div>
-        </div>
-        <div style="font-size:12px; color:var(--text2);">Paid by <strong id="rv-payer">—</strong></div>
-      </div>
-    </div>
-
-    <div class="sec-label">Items</div>
-    <div class="card" style="margin-top:0;">
-      <div id="review-items"></div>
-    </div>
-
-    <div class="sec-label">Charges</div>
-    <div class="card" style="margin-top:0;">
-      <!-- Service charge -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('sc')" class="toggle" id="toggle-sc"></div>
-          <div>
-            <div style="font-size:13px;">Service charge</div>
-            <div style="font-size:11px;color:var(--text3);" id="sc-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="sc-input" style="display:none;">
-          <input type="number" id="sc-pct" value="10" min="0" max="100" style="width:52px;padding:6px 8px;font-size:13px;" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">%</span>
-        </div>
-      </div>
-      <!-- VAT -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('vat')" class="toggle" id="toggle-vat"></div>
-          <div>
-            <div style="font-size:13px;">VAT</div>
-            <div style="font-size:11px;color:var(--text3);" id="vat-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="vat-input" style="display:none;">
-          <input type="number" id="vat-pct" value="7" min="0" max="100" style="width:52px;padding:6px 8px;font-size:13px;" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">%</span>
-        </div>
-      </div>
-      <!-- Discount -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('disc')" class="toggle" id="toggle-disc"></div>
-          <div>
-            <div style="font-size:13px;">Discount</div>
-            <div style="font-size:11px;color:var(--text3);" id="disc-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="disc-input" style="display:none;">
-          <input type="number" id="disc-amt" value="0" min="0" style="width:68px;padding:6px 8px;font-size:13px;" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">฿</span>
-        </div>
-      </div>
-      <!-- Cash voucher -->
-      <div class="card-row">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;">
-          <div onclick="toggleCharge('voucher')" class="toggle" id="toggle-voucher"></div>
-          <div>
-            <div style="font-size:13px;">Cash voucher</div>
-            <div style="font-size:11px;color:var(--text3);" id="voucher-preview">off</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;" id="voucher-input" style="display:none;">
-          <input type="number" id="voucher-amt" value="0" min="0" style="width:68px;padding:6px 8px;font-size:13px;" placeholder="face value" oninput="recalc()">
-          <span style="font-size:12px;color:var(--text2);">฿</span>
-        </div>
-      </div>
-      <!-- Grand total -->
-      <div class="card-row" style="border-top:0.5px solid var(--border);margin-top:4px;padding-top:12px;">
-        <div style="font-size:14px;font-weight:600;">Grand total</div>
-        <div style="text-align:right;">
-          <div style="font-size:14px;font-weight:600;" id="rv-grand-total">฿0</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="rv-receipt-compare"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Per-person totals (sticky bottom) -->
-    <div style="position:fixed;bottom:calc(var(--nav-h) + var(--safe-b));left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:var(--card);border-top:0.5px solid var(--border);padding:10px 14px;z-index:20;">
-      <div style="display:flex;gap:10px;margin-bottom:10px;">
-        <div style="flex:1;background:var(--acc-light);border-radius:10px;padding:8px 10px;">
-          <div style="font-size:10px;color:var(--acc-text);margin-bottom:2px;" id="rv-a-name">A</div>
-          <div style="font-size:16px;font-weight:600;color:var(--acc);" id="rv-a-total">฿0</div>
-          <div style="font-size:10px;color:var(--text3);" id="rv-a-detail">—</div>
-        </div>
-        <div style="flex:1;background:#FFF0E6;border-radius:10px;padding:8px 10px;">
-          <div style="font-size:10px;color:#a0623a;margin-bottom:2px;" id="rv-b-name">B</div>
-          <div style="font-size:16px;font-weight:600;color:#a0623a;" id="rv-b-total">฿0</div>
-          <div style="font-size:10px;color:var(--text3);" id="rv-b-detail">—</div>
-        </div>
-      </div>
-      <button class="btn" style="margin:0;width:100%;" onclick="goToConfirm()">Next →</button>
-    </div>
-  </div>
-
-  <!-- NEW BILL: STEP 3 — CONFIRM & SAVE -->
-  <div id="screen-confirm" class="screen">
-    <div class="page-header">
-      <div class="back-btn" onclick="goTo('review')">
-        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        Back
-      </div>
-      <div class="page-title">Confirm & save</div>
-    </div>
-
-    <div class="sec-label">Bill breakdown</div>
-    <div class="card" style="margin-top:0;" id="confirm-breakdown"></div>
-
-    <div class="sec-label">Who owes what</div>
-    <div class="card" style="margin-top:0;" id="confirm-persons"></div>
-
-    <div class="sec-label">Payment</div>
-    <div class="card" style="margin-top:0;" id="confirm-payment"></div>
-
-    <div id="confirm-net" style="margin:6px 12px 10px; padding:10px 14px; background:var(--grn-light); border-radius:12px; display:flex; justify-content:space-between; align-items:center;">
-      <div style="font-size:12px; color:#2a6644;">New balance after saving</div>
-      <div style="font-size:13px; font-weight:600; color:var(--grn);" id="confirm-net-val">—</div>
-    </div>
-
-    <button class="btn" onclick="saveBill()">Save bill</button>
-    <div style="height:12px;"></div>
-  </div>
-
-  <!-- BOTTOM NAV -->
-  <nav class="nav">
-    <div class="nav-item active" id="nav-home" onclick="goTo('home')">
-      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span>Home</span>
-    </div>
-    <div class="nav-item" id="nav-history" onclick="goTo('history')">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      <span>History</span>
-    </div>
-    <div class="nav-fab-wrap">
-      <div class="nav-fab" onclick="goTo('newbill')" aria-label="New bill">
-        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </div>
-    </div>
-    <div class="nav-item" id="nav-summary" onclick="goTo('summary')">
-      <svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>
-      <span>Summary</span>
-    </div>
-    <div class="nav-item" id="nav-settings" onclick="goTo('settings')">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-      <span>Settings</span>
-    </div>
-  </nav>
-</div>
-
-<!-- ════════════════════════════════════════════════════
-     SHEETS (bottom drawers)
-════════════════════════════════════════════════════ -->
-<div class="sheet-overlay" id="sheet-overlay" onclick="closeSheet(event)">
-  <div class="sheet" id="sheet-content">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title" id="sheet-title"></div>
-    <div id="sheet-body"></div>
-  </div>
-</div>
-
-<!-- Scan overlay -->
-<div class="scan-overlay" id="scan-overlay">
-  <div class="scan-spinner"></div>
-  <div style="font-size:15px; font-weight:500;">Reading receipt…</div>
-  <div class="scan-step" id="scan-step">Uploading photo…</div>
-  <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; padding:0 32px;">Please keep this page open</div>
-</div>
-
-<!-- Custom split sheet -->
-<div class="sheet-overlay" id="custom-split-overlay" onclick="closeCustomSplit(event)">
-  <div class="sheet" id="custom-split-sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title" id="csp-title">Custom split</div>
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-      <div style="flex:1;">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-label">Person A</div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <input type="number" id="csp-a-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('a')">
-          <span style="font-size:13px;">%</span>
-        </div>
-      </div>
-      <div style="font-size:18px; color:var(--text3);">↔</div>
-      <div style="flex:1;">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-label">Person B</div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <input type="number" id="csp-b-pct" min="0" max="100" value="50" style="width:70px;" oninput="syncSplit('b')">
-          <span style="font-size:13px;">%</span>
-        </div>
-      </div>
-    </div>
-    <button class="btn" onclick="applyCustomSplit()">Apply</button>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════
-     JAVASCRIPT
-════════════════════════════════════════════════════ -->
-<script>
-// ── CURRENT USER ─────────────────────────────────────
-let currentUser = null; // 'a' or 'b', persisted in localStorage
-
-// ── STATE ────────────────────────────────────────────
-let state = {
-  bills: [],          // Array of bill objects
-  runningBalance: 0,  // positive = B owes A, negative = A owes B
-};
-let currentBill = {}; // bill being built
-let charges = { sc: false, vat: false, disc: false, voucher: false };
-let customSplitItemIdx = -1;
-let summaryFilter = 'month';
-let summaryPersonFilter = 'both';
-let historyFilter = 'all';
-let whoPaidManual = 'a';
-let editingBillId = null;
-let _ocrReceiptTotal = null;
-
-// ── INIT ─────────────────────────────────────────────
-function init() {
-  loadFromStorage();
-  const today = new Date();
-  document.getElementById('home-date').textContent = today.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' });
-  document.getElementById('bill-date').value = today.toISOString().split('T')[0];
-  updateSettingsUI();
-  renderHome();
-}
-
-// ── STORAGE ──────────────────────────────────────────
-function saveToStorage() {
-  localStorage.setItem('splitapp_state', JSON.stringify(state));
-  localStorage.setItem('splitapp_config', JSON.stringify({
-    personA: CONFIG.personA,
-    personB: CONFIG.personB,
-    currency: CONFIG.currency,
-    currencySymbol: CONFIG.currencySymbol,
-    geminiApiKey: CONFIG.geminiApiKey,
-    googleSheetUrl: CONFIG.googleSheetUrl,
-  }));
-}
-
-function loadFromStorage() {
-  const s = localStorage.getItem('splitapp_state');
-  if (s) state = JSON.parse(s);
-  const c = localStorage.getItem('splitapp_config');
-  if (c) { const cf = JSON.parse(c); Object.assign(CONFIG, cf); }
-}
-
-function editSecret(type) {
-  const isGemini = type === 'gemini';
-  const current = isGemini ? CONFIG.geminiApiKey : CONFIG.googleSheetUrl;
-  const title = isGemini ? 'Gemini API key' : 'Google Sheet URL';
-  const placeholder = isGemini ? 'AQ.Ab8R…' : 'https://script.google.com/macros/s/…/exec';
-  openSheet('input', title, `
-    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">Saved on this device only — never uploaded anywhere.</p>
-    <input type="text" id="secret-input" value="${current}" placeholder="${placeholder}" style="margin-bottom:12px;">
-    <button class="btn" onclick="saveSecret('${type}')">Save</button>
-  `);
-  setTimeout(() => document.getElementById('secret-input')?.focus(), 100);
-}
-
-function saveSecret(type) {
-  const val = document.getElementById('secret-input').value.trim();
-  if (type === 'gemini') CONFIG.geminiApiKey = val;
-  else CONFIG.googleSheetUrl = val;
-  saveToStorage();
-  updateSettingsUI();
-  closeSheet();
-}
-
-// ── NAVIGATION ───────────────────────────────────────
-function goTo(screen) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('screen-' + screen).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const navEl = document.getElementById('nav-' + screen);
-  if (navEl) navEl.classList.add('active');
-  if (screen === 'home') renderHome();
-  if (screen === 'history') renderHistory();
-  if (screen === 'summary') renderSummary();
-  if (screen === 'settings') updateSettingsUI();
-}
-
-// ── CURRENCY SYMBOL ──────────────────────────────────
-function fmt(n) { return CONFIG.currencySymbol + Math.round(Math.abs(n)).toLocaleString(); }
-function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Math.round(Math.abs(n)).toLocaleString(); }
-
-// ── HOME / DASHBOARD ─────────────────────────────────
-function renderHome() {
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  const myName = currentUser === 'b' ? nameB : nameA;
-  const otherName = currentUser === 'b' ? nameA : nameB;
-  const myAvatarClass = currentUser === 'b' ? 'av-b' : 'av-a';
-  document.getElementById('home-greeting').textContent = 'Hi, ' + myName;
-
-  // Avatars — stacked, current user on top, other tappable to switch perspective
-  const meAv = currentUser === 'b' ? 'av-b' : 'av-a';
-  const meInit = currentUser === 'b' ? 'PP' : 'CJ';
-  const otherAv = currentUser === 'b' ? 'av-a' : 'av-b';
-  const otherInit = currentUser === 'b' ? 'CJ' : 'PP';
-  const otherWho = currentUser === 'b' ? 'a' : 'b';
-  document.getElementById('home-avatars').innerHTML =
-    `<div style="position:relative;width:54px;height:36px;display:inline-block;">
-       <div class="avatar ${otherAv}" style="position:absolute;left:0;z-index:1;opacity:0.75;cursor:pointer;box-shadow:0 0 0 2px var(--bg);" onclick="switchPerspective('${otherWho}')" title="Switch to ${otherName}">${otherInit}</div>
-       <div class="avatar ${meAv}" style="position:absolute;right:0;z-index:2;box-shadow:0 0 0 2px var(--bg);">${meInit}</div>
-     </div>`;
-
-  // Balance card — from current user's perspective
-  // runningBalance > 0 means B owes A; < 0 means A owes B
-  const bal = state.runningBalance;
-  const myBal = currentUser === 'b' ? -bal : bal; // positive = other owes me
-  const card = document.getElementById('balance-card');
-  const amtEl = document.getElementById('balance-amount');
-  const lblEl = document.getElementById('balance-label');
-  amtEl.textContent = fmt(myBal);
-  if (Math.abs(myBal) < 1) {
-    card.style.background = 'var(--acc)';
-    lblEl.textContent = 'All settled up';
-  } else if (myBal > 0) {
-    card.style.background = 'var(--acc)';
-    lblEl.textContent = 'Get ' + fmt(myBal) + ' from ' + otherName;
-  } else {
-    card.style.background = 'var(--red)';
-    lblEl.textContent = 'Pay ' + fmt(myBal) + ' to ' + otherName;
-  }
-
-  // Stats
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const monthBills = state.bills.filter(b => b.date && b.date.slice(0, 7) === thisMonth);
-  const totalSpent = monthBills.reduce((s, b) => s + (b.grandTotal || 0), 0);
-  document.getElementById('stat-bills').textContent = monthBills.length;
-  document.getElementById('stat-total').textContent = fmt(totalSpent);
-  document.getElementById('balance-count').textContent = state.bills.length + ' bills';
-
-  // Recent bills list
-  const list = document.getElementById('recent-bills-list');
-  const recent = [...state.bills].reverse().slice(0, 8);
-  if (!recent.length) {
-    list.innerHTML = '<div style="padding:24px 16px; text-align:center; color:var(--text3); font-size:13px;">No bills yet. Tap + to add your first bill.</div>';
-    return;
-  }
-  list.innerHTML = recent.map(b => billRowHTML(b)).join('');
-}
-
-function billRowHTML(b) {
-  const nameA = CONFIG.personA || 'A';
-  const nameB = CONFIG.personB || 'B';
-  const paidBy = b.paidBy === 'a' ? nameA : nameB;
-  // netForA: positive = B owes A (good for A), negative = A owes B
-  const netForA = b.paidBy === 'a' ? (b.grandTotal - b.shareA) : -b.shareA;
-  // Flip for B's perspective
-  const myNet = currentUser === 'b' ? -netForA : netForA;
-  const otherName = currentUser === 'b' ? nameA : nameB;
-  const positive = myNet > 0;
-  const catClass = { food:'cat-food', shop:'cat-shop', cafe:'cat-cafe', transport:'cat-transport' }[b.category] || 'cat-other';
-  const catEmoji = { food:'🍜', shop:'🛒', cafe:'☕', transport:'🚗', '':'📋' }[b.category] || '📋';
-  return `<div class="card-row" style="cursor:pointer;" onclick="showBillDetail('${b.id}')">
-    <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
-      <div class="cat-icon ${catClass}">${catEmoji}</div>
-      <div style="min-width:0;">
-        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.place || 'Unknown'}</div>
-        <div style="font-size:11px;color:var(--text3);">${fmtDate(b.date)} · ${paidBy} paid · ${fmt(b.grandTotal)} total</div>
-      </div>
-    </div>
-    <div style="text-align:right;flex-shrink:0;">
-      <div class="${positive ? 'amt-grn' : 'amt-red'}">${positive ? '+' : '-'}${fmt(Math.abs(myNet))}</div>
-      <div style="font-size:10px;color:var(--text3);">${positive ? 'get back' : 'pay ' + otherName}</div>
-    </div>
-  </div>`;
-}
-
-function editBill(id) {
-  const b = state.bills.find(b => b.id === id);
-  if (!b) return;
-  editingBillId = id;
-
-  // Pre-fill form fields
-  document.getElementById('bill-date').value = b.date || '';
-  document.getElementById('bill-place').value = b.place || '';
-  document.getElementById('bill-category').value = b.category || '';
-  setWhoPaid('manual', b.paidBy || 'a');
-
-  // Pre-fill items
-  manualItems = (b.items && b.items.length)
-    ? b.items.map(it => ({ name: it.name || '', price: String(it.price || '') }))
-    : [{ name: '', price: '' }];
-  renderManualItems();
-
-  // Switch to manual entry tab and navigate
-  goTo('newbill');
-  switchBillTab('manual');
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  const s = String(d).trim();
-  let dt;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    dt = new Date(s + 'T00:00:00'); // plain YYYY-MM-DD — append time to avoid UTC shift
-  } else {
-    dt = new Date(s); // ISO with time, locale string, etc.
-  }
-  if (isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
-}
-
-function showBillDetail(id) {
-  const b = state.bills.find(b => b.id === id);
-  if (!b) return;
-  const nameA = CONFIG.personA || 'A';
-  const nameB = CONFIG.personB || 'B';
-  const paidBy = b.paidBy === 'a' ? nameA : nameB;
-
-  let itemsHTML = '';
-  if (b.items && b.items.length) {
-    itemsHTML = b.items.map(it => {
-      const assign = it.assignment === 'a' ? `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`
-        : it.assignment === 'b' ? `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`
-        : `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">Shared</span>`;
-      return `<div class="card-row">
-        <div style="flex:1;min-width:0;font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
-        <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(it.price * (it.qty||1))}</span></div>
-      </div>`;
-    }).join('');
-  } else {
-    itemsHTML = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>`;
-  }
-
-  document.getElementById('bill-detail-title').textContent = b.place || 'Bill detail';
-  document.getElementById('bill-detail-content').innerHTML = `
-    <div style="margin:8px 0 16px;">
-      <div style="font-size:12px;color:var(--text3);">${fmtDate(b.date)} · Paid by ${paidBy}</div>
-    </div>
-    <div class="sec-label">Items</div>
-    <div class="card" style="margin-top:0;">${itemsHTML}</div>
-    <div class="sec-label">Totals</div>
-    <div class="card" style="margin-top:0;">
-      <div class="card-row"><span>${nameA}</span><span style="font-weight:500;">${fmt(b.shareA)}</span></div>
-      <div class="card-row"><span>${nameB}</span><span style="font-weight:500;">${fmt(b.shareB)}</span></div>
-      <div class="card-row" style="font-weight:600;border-top:1px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
-    </div>
-    <div style="display:flex;gap:10px;margin-top:20px;">
-      <button onclick="editBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--acc);background:transparent;color:var(--acc);font-size:14px;font-weight:600;cursor:pointer;">Edit</button>
-      <button onclick="confirmDeleteBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--red);color:white;font-size:14px;font-weight:600;cursor:pointer;">Delete</button>
-    </div>`;
-
-  goTo('bill-detail');
-}
-
-function confirmDeleteBill(id) {
-  if (!confirm('Delete this bill? This cannot be undone.')) return;
-  deleteBill(id);
-}
-
-function deleteBill(id) {
-  const idx = state.bills.findIndex(b => b.id === id);
-  if (idx < 0) return;
-  const b = state.bills[idx];
-  if (b.paidBy === 'a') state.runningBalance -= (b.grandTotal - b.shareA);
-  else state.runningBalance += b.shareA;
-  state.bills.splice(idx, 1);
-  saveToStorage();
-  goTo('history');
-  callDeleteBill(id);
-}
-
-async function callDeleteBill(id) {
-  if (!CONFIG.googleSheetUrl) return;
-  await fetch(CONFIG.googleSheetUrl, {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify({ action: 'deleteBill', id }),
-  });
-}
-
-async function callUpdateBill(bill) {
-  if (!CONFIG.googleSheetUrl) return;
-  await fetch(CONFIG.googleSheetUrl, {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify({
-      action: 'updateBill',
-      bill: {
-        id: bill.id,
-        date: bill.date,
-        place: bill.place,
-        category: bill.category,
-        paidBy: bill.paidBy === 'a' ? (CONFIG.personA || 'A') : (CONFIG.personB || 'B'),
-        grandTotal: bill.grandTotal,
-        shareA: bill.shareA,
-        shareB: bill.shareB,
-        runningBalance: state.runningBalance,
-        items_json: JSON.stringify(bill.items || []),
-      }
-    }),
-  });
-}
-
-function showBreakdown() {
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  const bal = state.runningBalance;
-  const myBal = currentUser === 'b' ? -bal : bal;
-  const otherName = currentUser === 'b' ? nameA : nameB;
-  openSheet('info', 'Balance breakdown', `
-    <div style="padding:4px 0;">
-      <div class="sheet-option"><span class="so-label">${nameA} paid out total</span><span>${fmt(state.bills.filter(b=>b.paidBy==='a').reduce((s,b)=>s+b.grandTotal,0))}</span></div>
-      <div class="sheet-option"><span class="so-label">${nameB} paid out total</span><span>${fmt(state.bills.filter(b=>b.paidBy==='b').reduce((s,b)=>s+b.grandTotal,0))}</span></div>
-      <div class="sheet-option"><span class="so-label" style="font-weight:500;">Your balance</span><span style="font-weight:500;color:${myBal>=0?'var(--grn)':'var(--red)'};">${myBal>=0?'Get':'Pay'} ${fmt(myBal)} ${myBal>=0?'from':'to'} ${otherName}</span></div>
-    </div>`);
-}
-
-function shareBalance() {
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  const bal = state.runningBalance;
-  const myBal = currentUser === 'b' ? -bal : bal;
-  const myName = currentUser === 'b' ? nameB : nameA;
-  const otherName = currentUser === 'b' ? nameA : nameB;
-  const msg = Math.abs(myBal) < 1
-    ? `${nameA} & ${nameB} are all settled up`
-    : myBal > 0
-    ? `${otherName} owes ${myName} ${fmt(myBal)} (${state.bills.length} bills)`
-    : `${myName} owes ${otherName} ${fmt(myBal)} (${state.bills.length} bills)`;
-  if (navigator.share) navigator.share({ text: msg });
-  else navigator.clipboard?.writeText(msg).then(() => alert('Copied: ' + msg));
-}
-
-// ── HISTORY ──────────────────────────────────────────
-function filterHistory(f) {
-  historyFilter = f;
-  document.getElementById('hf-all').className = 'chip ' + (f==='all' ? 'chip-a' : 'chip-shared');
-  document.getElementById('hf-month').className = 'chip ' + (f==='month' ? 'chip-a' : 'chip-shared');
-  renderHistory();
-}
-
-function renderHistory() {
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  let bills = [...state.bills].reverse();
-  if (historyFilter === 'month') bills = bills.filter(b => b.date && b.date.slice(0,7) === thisMonth);
-
-  const list = document.getElementById('history-list');
-  if (!bills.length) {
-    list.innerHTML = '<div style="padding:32px 16px;text-align:center;color:var(--text3);font-size:13px;">No bills found.</div>';
-    return;
-  }
-
-  // Group by month
-  const groups = {};
-  bills.forEach(b => {
-    const m = b.date ? b.date.slice(0,7) : 'Unknown';
-    if (!groups[m]) groups[m] = [];
-    groups[m].push(b);
-  });
-
-  list.innerHTML = Object.entries(groups).map(([m, bs]) => {
-    const label = m === 'Unknown' ? 'Unknown date' : new Date(m + '-01').toLocaleDateString('en-GB', { month:'long', year:'numeric' });
-    return `<div class="sec-label">${label}</div>
-      <div class="card" style="margin-top:0;">
-        ${bs.map(b => billRowHTML(b)).join('')}
-      </div>`;
-  }).join('');
-}
-
-// ── SETTINGS ─────────────────────────────────────────
-function updateSettingsUI() {
-  const a = CONFIG.personA || 'Tap to set name';
-  const b = CONFIG.personB || 'Tap to set name';
-  document.getElementById('name-a-settings').textContent = a;
-  document.getElementById('name-b-settings').textContent = b;
-  document.getElementById('av-a-settings').textContent = 'CJ';
-  document.getElementById('av-b-settings').textContent = 'PP';
-  document.getElementById('currency-val').innerHTML = CONFIG.currency + ' ' + CONFIG.currencySymbol + ' <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;opacity:0.5;vertical-align:-2px;"><polyline points="9 18 15 12 9 6"/></svg>';
-  const hasGemini = CONFIG.geminiApiKey && CONFIG.geminiApiKey.length > 5;
-  const ocrEl = document.getElementById('ocr-status');
-  if (ocrEl) ocrEl.innerHTML = hasGemini ? `<span class="badge badge-acc">${geminiModel} ✓</span>` : '<span class="badge badge-red">Not loaded</span>';
-  const signedInEl = document.getElementById('signed-in-name');
-  if (signedInEl) {
-    const myName = currentUser === 'a' ? (CONFIG.personA || 'Person A') : currentUser === 'b' ? (CONFIG.personB || 'Person B') : '—';
-    signedInEl.textContent = myName;
-  }
-  updateWhoPayNames();
-}
-
-function editName(person) {
-  const current = person === 'a' ? CONFIG.personA : CONFIG.personB;
-  openSheet('input', 'Set name', `
-    <input type="text" id="name-input" value="${current}" placeholder="Enter name" style="margin-bottom:12px;" autofocus>
-    <button class="btn" onclick="saveName('${person}')">Save</button>
-  `);
-  setTimeout(() => document.getElementById('name-input')?.focus(), 100);
-}
-
-function saveName(person) {
-  const val = document.getElementById('name-input').value.trim();
-  if (!val) return;
-  if (person === 'a') CONFIG.personA = val;
-  else CONFIG.personB = val;
-  saveToStorage();
-  updateSettingsUI();
-  closeSheet();
-  callSetConfig(person === 'a' ? 'person_a' : 'person_b', val);
-}
-
-function openGSheet() {
-  const url = CONFIG.googleSheetEditUrl || CONFIG.googleSheetUrl;
-  if (url) window.open(url, '_blank');
-  else alert('No Google Sheet URL configured.');
-}
-
-// ── CURRENCY SHEET ────────────────────────────────────
-const currencies = [
-  { code:'THB', sym:'฿', label:'Thai Baht' },
-  { code:'USD', sym:'$', label:'US Dollar' },
-  { code:'EUR', sym:'€', label:'Euro' },
-  { code:'SGD', sym:'S$', label:'Singapore Dollar' },
-  { code:'JPY', sym:'¥', label:'Japanese Yen' },
-  { code:'GBP', sym:'£', label:'British Pound' },
-];
-
-// ── SHEET SYSTEM ─────────────────────────────────────
-function openSheet(type, title, body) {
-  document.getElementById('sheet-title').textContent = title || '';
-  document.getElementById('sheet-body').innerHTML = body || '';
-  document.getElementById('sheet-overlay').classList.add('open');
-
-  if (type === 'currency') {
-    document.getElementById('sheet-title').textContent = 'Currency';
-    document.getElementById('sheet-body').innerHTML = currencies.map(c =>
-      `<div class="sheet-option ${c.code===CONFIG.currency?'sel':''}" onclick="setCurrency('${c.code}','${c.sym}')">
-        <span class="so-label">${c.sym} — ${c.label}</span>
-        <span class="so-check">✓</span>
-      </div>`).join('');
-  }
-}
-
-function closeSheet(e) {
-  if (!e || e.target === document.getElementById('sheet-overlay')) {
-    document.getElementById('sheet-overlay').classList.remove('open');
-  }
-}
-
-function setCurrency(code, sym) {
-  CONFIG.currency = code; CONFIG.currencySymbol = sym;
-  saveToStorage(); updateSettingsUI(); closeSheet();
-  callSetConfig('currency', code);
-  callSetConfig('currency_symbol', sym);
-}
-
-// ── NEW BILL: CAPTURE ─────────────────────────────────
-function switchBillTab(tab) {
-  document.getElementById('tab-upload').className = 'pill-tab' + (tab==='upload' ? ' active' : '');
-  document.getElementById('tab-manual').className = 'pill-tab' + (tab==='manual' ? ' active' : '');
-  document.getElementById('panel-upload').style.display = tab==='upload' ? 'block' : 'none';
-  document.getElementById('panel-manual').style.display = tab==='manual' ? 'block' : 'none';
-}
-
-function updateWhoPayNames() {
-  const a = CONFIG.personA || 'Person A';
-  const b = CONFIG.personB || 'Person B';
-  document.getElementById('wb-manual-a-name').textContent = a;
-  document.getElementById('wb-manual-b-name').textContent = b;
-}
-
-function setWhoPaid(context, person) {
-  whoPaidManual = person;
-  document.getElementById('wb-manual-a').className = 'who-btn' + (person==='a' ? ' active-a' : '');
-  document.getElementById('wb-manual-b').className = 'who-btn' + (person==='b' ? ' active-b' : '');
-}
-
-// Manual items
-let manualItems = [];
-function initManualItems() {
-  manualItems = [{ name: '', price: '' }];
-  renderManualItems();
-}
-
-function renderManualItems() {
-  document.getElementById('manual-items').innerHTML = manualItems.map((item, i) =>
-    `<div class="card-row" style="gap:8px;">
-      <input type="text" placeholder="Item name" value="${item.name}" style="flex:2;min-width:0;" oninput="manualItems[${i}].name=this.value">
-      <input type="number" placeholder="Price" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value">
-      ${manualItems.length>1 ? `<div onclick="removeManualItem(${i})" style="color:var(--red);font-size:18px;cursor:pointer;padding:0 4px;">×</div>` : ''}
-    </div>`).join('');
-}
-
-function addManualItem() { manualItems.push({ name:'', price:'' }); renderManualItems(); }
-function removeManualItem(i) { manualItems.splice(i, 1); renderManualItems(); }
-
-function triggerPhotoUpload() { document.getElementById('photo-input').click(); }
-
-// Scan message cycling
-const SCAN_MESSAGES = [
-  'Uploading photo…',
-  'Reading items & prices…',
-  'Extracting charges & totals…',
-  'Almost done…',
-];
-let scanMsgTimer = null;
-
-function startScanMessages(stepEl) {
-  let idx = 0;
-  stepEl.textContent = SCAN_MESSAGES[idx];
-  scanMsgTimer = setInterval(() => {
-    idx = (idx + 1) % SCAN_MESSAGES.length;
-    stepEl.textContent = SCAN_MESSAGES[idx];
-  }, 5000);
-}
-
-function stopScanMessages() {
-  if (scanMsgTimer) { clearInterval(scanMsgTimer); scanMsgTimer = null; }
-}
-
-async function handlePhotoUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const overlay = document.getElementById('scan-overlay');
-  const stepEl = document.getElementById('scan-step');
-  overlay.classList.add('open');
-
-  if (!CONFIG.geminiApiKey) {
-    overlay.classList.remove('open');
-    alert('No Gemini API key found. Check Settings → About → Receipt OCR.');
-    event.target.value = '';
-    return;
-  }
-
-  try {
-    startScanMessages(stepEl);
-    const base64 = await fileToBase64(file);
-
-    // Build fallback model list: current best first, then others
-    const modelQueue = [geminiModel, 'gemini-2.5-flash', 'gemini-2.0-flash']
-      .filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
-
-    let result = null;
-    let lastErr = null;
-
-    for (let i = 0; i < modelQueue.length; i++) {
-      const model = modelQueue[i];
-      if (i > 0) {
-        stopScanMessages();
-        stepEl.textContent = `Having trouble, trying a different model…`;
-        await new Promise(r => setTimeout(r, 1500));
-        startScanMessages(stepEl);
-      }
-      try {
-        result = await callGeminiOCR(base64, file.type, model);
-        geminiModel = model; // update active model
-        break;
-      } catch(err) {
-        lastErr = err;
-        console.warn(`Model ${model} failed:`, err.message);
-      }
-    }
-
-    stopScanMessages();
-
-    if (!result) {
-      overlay.classList.remove('open');
-      if (lastErr?.message === 'RATE_LIMIT') {
-        alert('Too many requests. Please wait a moment and try again, or use manual entry.');
-      } else if (lastErr?.message === 'OVERLOADED') {
-        alert('Gemini is busy right now. Please try again in a moment, or use manual entry.');
-      } else {
-        alert('Could not read receipt after multiple attempts. Please use manual entry.');
-      }
-      event.target.value = '';
-      return;
-    }
-
-    stepEl.textContent = 'Done!';
-    overlay.classList.remove('open');
-    prefillManualFromOCR(result);
-  } catch (err) {
-    stopScanMessages();
-    overlay.classList.remove('open');
-    console.error(err);
-    alert('Could not read receipt. Please use manual entry.');
-  }
-  event.target.value = '';
-}
-
-function prefillManualFromOCR(result) {
-  // Store OCR receipt total for comparison in Review screen
-  _ocrReceiptTotal = (result.total && result.total > 0) ? result.total : null;
-
-  // Reset who paid
-  whoPaidManual = 'a';
-  setWhoPaid('manual', 'a');
-
-  // Fill in date, place, category
-  const dateEl = document.getElementById('bill-date');
-  const placeEl = document.getElementById('bill-place');
-  const catEl = document.getElementById('bill-category');
-  if (dateEl && result.date) dateEl.value = result.date;
-  if (placeEl && result.merchant) placeEl.value = result.merchant;
-  if (catEl && result.category) catEl.value = result.category;
-
-  // Populate items
-  manualItems = (result.items || []).map(it => ({
-    name: it.name || '',
-    price: it.unit_price || 0,
-  }));
-  if (manualItems.length === 0) manualItems = [{ name: '', price: '' }];
-  renderManualItems();
-
-  // Show manual entry tab and navigate to new bill screen
-  switchBillTab('manual');
-  goTo('newbill');
-
-  // If no items found, show a toast/hint
-  if ((result.items || []).length === 0) {
-    setTimeout(() => alert('No items found on receipt. Please fill in manually.'), 300);
-  }
-}
-
-function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(reader.result.split(',')[1]);
-    reader.onerror = rej;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function callGeminiOCR(base64, mimeType, model = geminiModel) {
-  const prompt = `Read this receipt and return ONLY valid JSON (no markdown) with these fields:
-{
-  "date": "YYYY-MM-DD",
-  "merchant": "restaurant or store name",
-  "category": "food|shop|cafe|transport|other",
-  "items": [{"name": "item name", "qty": 1, "unit_price": 0}],
-  "service_charge_percent": 0,
-  "vat_percent": 0,
-  "discounts": [{"description": "text", "amount": 0}],
-  "total": 0
-}`;
-
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64 } }] }]
-    })
-  });
-
-  if (!resp.ok) {
-    const errData = await resp.json().catch(() => ({}));
-    const code = errData?.error?.code || resp.status;
-    if (code === 429) throw new Error('RATE_LIMIT');
-    if (code === 503) throw new Error('OVERLOADED');
-    throw new Error('Gemini API error: ' + code);
-  }
-  const data = await resp.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-  const clean = text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-  return JSON.parse(clean);
-}
-
-function goToReview(source) {
-  if (source === 'manual') {
-    const place = document.getElementById('bill-place').value.trim();
-    const date = document.getElementById('bill-date').value;
-    const category = document.getElementById('bill-category').value;
-    const items = manualItems.filter(it => it.name || it.price).map(it => ({
-      name: it.name || 'Item',
-      qty: 1,
-      price: parseFloat(it.price) || 0,
-      assignment: 'shared',
-      splitA: 50,
-      splitB: 50,
-    }));
-    if (!items.length) { alert('Add at least one item.'); return; }
-    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, disc:false, discAmt:0, voucher:false, voucherAmt:0 }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
-    _ocrReceiptTotal = null;
-  }
-
-  // Sync charge toggles from currentBill
-  const ch = currentBill.charges;
-  ['sc','vat','disc','voucher'].forEach(k => {
-    charges[k] = ch[k] || false;
-    updateToggle(k);
-  });
-  if (ch.scPct) document.getElementById('sc-pct').value = ch.scPct;
-  if (ch.vatPct) document.getElementById('vat-pct').value = ch.vatPct;
-
-  // Payer
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  document.getElementById('rv-place').textContent = currentBill.place || 'New bill';
-  document.getElementById('rv-meta').textContent = fmtDate(currentBill.date) + (currentBill.category ? ' · ' + currentBill.category : '');
-  document.getElementById('rv-payer').textContent = currentBill.paidBy === 'a' ? nameA : nameB;
-  document.getElementById('rv-a-name').textContent = nameA;
-  document.getElementById('rv-b-name').textContent = nameB;
-
-  renderReviewItems();
-  recalc();
-  goTo('review');
-}
-
-// ── REVIEW SCREEN ─────────────────────────────────────
-function renderReviewItems() {
-  const nameA = CONFIG.personA || 'A';
-  const nameB = CONFIG.personB || 'B';
-  document.getElementById('review-items').innerHTML = currentBill.items.map((it, i) => {
-    let chipClass, chipLabel;
-    if (it.assignment === 'a') { chipClass = 'chip-a'; chipLabel = nameA; }
-    else if (it.assignment === 'b') { chipClass = 'chip-b'; chipLabel = nameB; }
-    else if (it.assignment === 'custom') { chipClass = 'chip-custom'; chipLabel = (it.splitA||50)+'/'+(it.splitB||50); }
-    else { chipClass = 'chip-shared'; chipLabel = 'Shared'; }
-    return `<div class="card-row" style="gap:8px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
-        <div style="font-size:11px;color:var(--text3);">${fmt(it.price * it.qty)}</div>
-      </div>
-      <div class="assign-dd-wrap">
-        <div class="assign-chip ${chipClass}">
-          <div class="chip-cycle" onclick="cycleAssign(${i})">${chipLabel}</div>
-          <div class="chip-divider"></div>
-          <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)">▾</div>
-        </div>
-        <div class="assign-dropdown" id="assign-dd-${i}">
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom %</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function cycleAssign(i) {
-  // Perspective-aware order: current user's name comes first after Shared
-  const order = currentUser === 'b' ? ['shared', 'b', 'a'] : ['shared', 'a', 'b'];
-  const cur = currentBill.items[i].assignment;
-  const idx = order.indexOf(cur === 'custom' ? 'shared' : cur);
-  const next = order[(idx + 1) % order.length];
-  currentBill.items[i].assignment = next;
-  if (next === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
-  renderReviewItems();
-  recalc();
-}
-
-let _openDdIdx = null;
-function toggleAssignDropdown(i, e) {
-  e.stopPropagation();
-  const dd = document.getElementById('assign-dd-' + i);
-  if (!dd) return;
-  const isOpen = dd.classList.contains('open');
-  closeAllAssignDropdowns();
-  if (!isOpen) { dd.classList.add('open'); _openDdIdx = i; }
-}
-function closeAllAssignDropdowns() {
-  if (_openDdIdx !== null) {
-    const el = document.getElementById('assign-dd-' + _openDdIdx);
-    if (el) el.classList.remove('open');
-    _openDdIdx = null;
-  }
-}
-function setAssignDirect(i, val) {
-  closeAllAssignDropdowns();
-  if (val === 'custom') { openCustomSplit(i); return; }
-  currentBill.items[i].assignment = val;
-  if (val === 'shared') { currentBill.items[i].splitA = 50; currentBill.items[i].splitB = 50; }
-  renderReviewItems();
-  recalc();
-}
-
-function openCustomSplit(i) {
-  customSplitItemIdx = i;
-  const it = currentBill.items[i];
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  document.getElementById('csp-title').textContent = 'Custom split — ' + it.name;
-  document.getElementById('csp-a-label').textContent = nameA;
-  document.getElementById('csp-b-label').textContent = nameB;
-  document.getElementById('csp-a-pct').value = it.splitA || 50;
-  document.getElementById('csp-b-pct').value = it.splitB || 50;
-  document.getElementById('custom-split-overlay').classList.add('open');
-}
-
-function closeCustomSplit(e) {
-  if (!e || e.target === document.getElementById('custom-split-overlay')) {
-    document.getElementById('custom-split-overlay').classList.remove('open');
-  }
-}
-
-function syncSplit(side) {
-  const aEl = document.getElementById('csp-a-pct');
-  const bEl = document.getElementById('csp-b-pct');
-  const val = Math.min(100, Math.max(0, parseInt(side==='a' ? aEl.value : bEl.value) || 0));
-  if (side === 'a') { aEl.value = val; bEl.value = 100 - val; }
-  else { bEl.value = val; aEl.value = 100 - val; }
-}
-
-function applyCustomSplit() {
-  const a = parseInt(document.getElementById('csp-a-pct').value) || 50;
-  const b = 100 - a;
-  const it = currentBill.items[customSplitItemIdx];
-  it.splitA = a; it.splitB = b; it.assignment = 'custom';
-  renderReviewItems(); recalc();
-  document.getElementById('custom-split-overlay').classList.remove('open');
-}
-
-// ── CHARGE TOGGLES ────────────────────────────────────
-function toggleCharge(key) {
-  charges[key] = !charges[key];
-  updateToggle(key);
-  recalc();
-}
-
-function updateToggle(key) {
-  const el = document.getElementById('toggle-' + key);
-  if (el) el.className = 'toggle' + (charges[key] ? ' on' : '');
-  const inp = document.getElementById(key + '-input');
-  if (inp) inp.style.display = charges[key] ? 'flex' : 'none';
-}
-
-// ── RECALCULATE ───────────────────────────────────────
-function recalc() {
-  const items = currentBill.items || [];
-  const subtotal = items.reduce((s, it) => s + (it.price * it.qty), 0);
-
-  const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
-  const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
-  const discAmt = charges.disc ? (parseFloat(document.getElementById('disc-amt')?.value) || 0) : 0;
-  const voucherAmt = charges.voucher ? (parseFloat(document.getElementById('voucher-amt')?.value) || 0) : 0;
-
-  const sc = subtotal * scPct / 100;
-  const vat = (subtotal + sc) * vatPct / 100;
-  const disc = Math.min(discAmt, subtotal);
-  const postDisc = subtotal - disc + sc + vat;
-  const voucher = Math.min(voucherAmt, postDisc);
-  const grandTotal = Math.max(0, postDisc - voucher);
-
-  // Per-item share
-  let shareA = 0, shareB = 0;
-  items.forEach(it => {
-    const total = it.price * it.qty;
-    if (it.assignment === 'a') shareA += total;
-    else if (it.assignment === 'b') shareB += total;
-    else { shareA += total * (it.splitA || 50) / 100; shareB += total * (it.splitB || 50) / 100; }
-  });
-
-  // Distribute charges proportionally
-  const chargeTotal = sc + vat - disc - voucher;
-  const ratio = subtotal > 0 ? shareA / subtotal : 0.5;
-  const chargesA = chargeTotal * ratio;
-  const chargesB = chargeTotal * (1 - ratio);
-
-  const totalA = Math.max(0, shareA + chargesA);
-  const totalB = Math.max(0, shareB + chargesB);
-
-  // Update store
-  currentBill._calc = { subtotal, sc, scPct, vat, vatPct, disc, discAmt, voucher, voucherAmt, grandTotal, shareA: totalA, shareB: totalB, chargesA, chargesB, itemsA: shareA, itemsB: shareB };
-
-  // Update previews
-  if (document.getElementById('sc-preview')) {
-    document.getElementById('sc-preview').textContent = charges.sc ? scPct+'% → +'+fmt(sc) : 'off';
-    document.getElementById('vat-preview').textContent = charges.vat ? vatPct+'% → +'+fmt(vat) : 'off';
-    document.getElementById('disc-preview').textContent = charges.disc ? '-'+fmt(disc) : 'off';
-    document.getElementById('voucher-preview').textContent = charges.voucher ? '-'+fmt(voucher) : 'off';
-  }
-
-  // Update totals footer
-  document.getElementById('rv-a-total').textContent = fmt(totalA);
-  document.getElementById('rv-b-total').textContent = fmt(totalB);
-  document.getElementById('rv-a-detail').textContent = 'items '+fmt(shareA)+' + charges '+fmt(Math.abs(chargesA));
-  document.getElementById('rv-b-detail').textContent = 'items '+fmt(shareB)+' + charges '+fmt(Math.abs(chargesB));
-
-  // Update grand total + receipt comparison
-  const gtEl = document.getElementById('rv-grand-total');
-  const rcEl = document.getElementById('rv-receipt-compare');
-  if (gtEl) gtEl.textContent = fmt(grandTotal);
-  if (rcEl) {
-    const rt = currentBill.receiptTotal;
-    if (rt && rt > 0) {
-      const diff = Math.abs(grandTotal - rt);
-      const match = diff < 1; // within ฿1 rounding tolerance
-      rcEl.textContent = 'Receipt: ' + fmt(rt) + (match ? ' ✓' : ' ⚠');
-      rcEl.style.color = match ? 'var(--grn)' : '#e08700';
-    } else {
-      rcEl.textContent = '';
-    }
-  }
-}
-
-// ── CONFIRM SCREEN ────────────────────────────────────
-function goToConfirm() {
-  const calc = currentBill._calc;
-  if (!calc) return;
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  const payer = currentBill.paidBy === 'a' ? nameA : nameB;
-  const payee = currentBill.paidBy === 'a' ? nameB : nameA;
-
-  // Breakdown
-  let bdown = `<div class="card-row"><span>Items subtotal</span><span>${fmt(calc.subtotal)}</span></div>`;
-  if (calc.sc) bdown += `<div class="card-row"><span>Service charge (${calc.scPct}%)</span><span>+${fmt(calc.sc)}</span></div>`;
-  if (calc.vat) bdown += `<div class="card-row"><span>VAT (${calc.vatPct}%)</span><span>+${fmt(calc.vat)}</span></div>`;
-  if (calc.disc) bdown += `<div class="card-row"><span>Discount</span><span style="color:var(--grn);">-${fmt(calc.disc)}</span></div>`;
-  if (calc.voucher) bdown += `<div class="card-row"><span>Cash voucher</span><span style="color:var(--grn);">-${fmt(calc.voucher)}</span></div>`;
-  bdown += `<div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(calc.grandTotal)}</span></div>`;
-  document.getElementById('confirm-breakdown').innerHTML = bdown;
-
-  // Persons
-  document.getElementById('confirm-persons').innerHTML = `
-    <div class="card-row">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div class="avatar av-a">CJ</div>
-        <div><div style="font-size:13px;font-weight:500;">${nameA}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsA)} + charges ${fmt(Math.abs(calc.chargesA))}</div></div>
-      </div>
-      <div style="font-size:15px;font-weight:600;color:var(--acc);">${fmt(calc.shareA)}</div>
-    </div>
-    <div class="card-row">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div class="avatar av-b">PP</div>
-        <div><div style="font-size:13px;font-weight:500;">${nameB}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsB)} + charges ${fmt(Math.abs(calc.chargesB))}</div></div>
-      </div>
-      <div style="font-size:15px;font-weight:600;color:#a0623a;">${fmt(calc.shareB)}</div>
-    </div>`;
-
-  // Payment
-  const owes = currentBill.paidBy === 'a' ? calc.shareB : calc.shareA;
-  document.getElementById('confirm-payment').innerHTML = `
-    <div class="card-row"><span>Paid by</span><span style="font-weight:500;">${payer}</span></div>
-    <div class="card-row"><span>${payee} owes ${payer}</span><span class="amt-grn">+${fmt(owes)}</span></div>`;
-
-  // Net effect
-  const newBal = currentBill.paidBy === 'a'
-    ? state.runningBalance + calc.shareB
-    : state.runningBalance - calc.shareA;
-  const netLabel = Math.abs(newBal) < 1 ? 'All settled up'
-    : newBal > 0 ? 'Get ' + fmt(newBal) + ' from ' + nameB
-    : 'Pay ' + fmt(newBal) + ' to ' + nameB;
-  document.getElementById('confirm-net-val').textContent = netLabel;
-  document.getElementById('confirm-net').style.background = newBal < 0 ? 'var(--red-light)' : 'var(--grn-light)';
-  document.getElementById('confirm-net-val').style.color = newBal < 0 ? 'var(--red)' : 'var(--grn)';
-
-  goTo('confirm');
-}
-
-async function saveBill() {
-  const calc = currentBill._calc;
-  const isEditing = !!editingBillId;
-  const bill = {
-    id: editingBillId || currentBill.id || Date.now().toString(),
-    date: currentBill.date,
-    place: currentBill.place,
-    category: currentBill.category,
-    paidBy: currentBill.paidBy,
-    grandTotal: calc.grandTotal,
-    shareA: calc.shareA,
-    shareB: calc.shareB,
-    items: currentBill.items,
-  };
-
-  if (isEditing) {
-    // Remove old bill and reverse its balance contribution
-    const oldIdx = state.bills.findIndex(b => b.id === bill.id);
-    if (oldIdx >= 0) {
-      const old = state.bills[oldIdx];
-      if (old.paidBy === 'a') state.runningBalance -= (old.grandTotal - old.shareA);
-      else state.runningBalance += old.shareA;
-      state.bills.splice(oldIdx, 1);
-    }
-    editingBillId = null;
-  }
-
-  // Add updated/new bill and update balance
-  if (bill.paidBy === 'a') state.runningBalance += calc.shareB;
-  else state.runningBalance -= calc.shareA;
-
-  state.bills.push(bill);
-  saveToStorage();
-
-  // Sync to Google Sheets then pull fresh data
-  if (isEditing) {
-    callUpdateBill(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets update failed:', e));
-  } else {
-    syncToSheets(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets sync failed:', e));
-  }
-
-  // Reset
-  currentBill = {};
-  charges = { sc:false, vat:false, disc:false, voucher:false };
-  initManualItems();
-  ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
-  document.getElementById('bill-place').value = '';
-  document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('bill-category').value = '';
-
-  goTo('home');
-}
-
-// ── GOOGLE SHEETS SYNC ────────────────────────────────
-async function syncToSheets(bill) {
-  if (!CONFIG.googleSheetUrl) return;
-  const payload = {
-    action: 'addBill',
-    bill: {
-      id: bill.id,
-      date: bill.date,
-      place: bill.place,
-      category: bill.category,
-      paidBy: bill.paidBy === 'a' ? (CONFIG.personA || 'A') : (CONFIG.personB || 'B'),
-      grandTotal: bill.grandTotal,
-      shareA: bill.shareA,
-      shareB: bill.shareB,
-      runningBalance: state.runningBalance,
-      items_json: JSON.stringify(bill.items || []),
-    }
-  };
-  await fetch(CONFIG.googleSheetUrl, {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify(payload),
-  });
-}
-
-// ── SUMMARY ───────────────────────────────────────────
-function filterSummary(f) {
-  summaryFilter = f;
-  ['month','3m','all'].forEach(k => {
-    document.getElementById('sf-'+k).className = 'chip ' + (k===f ? 'chip-a' : 'chip-shared');
-  });
-  renderSummary();
-}
-
-function setPersonFilter(p) {
-  summaryPersonFilter = p;
-  ['both','a','b'].forEach(k => {
-    const el = document.getElementById('pf-'+k);
-    if (el) el.className = 'chip ' + (k===p ? 'chip-a' : 'chip-shared');
-  });
-  renderSummary();
-}
-
-function getBillsForFilter() {
-  const now = new Date();
-  return state.bills.filter(b => {
-    if (!b.date) return true;
-    if (summaryFilter === 'month') return b.date.slice(0,7) === now.toISOString().slice(0,7);
-    if (summaryFilter === '3m') { const d = new Date(b.date); const diff = (now - d) / (1000*60*60*24*30); return diff <= 3; }
-    return true;
-  });
-}
-
-function renderSummary() {
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
-  document.getElementById('legend-a').textContent = nameA;
-  document.getElementById('legend-b').textContent = nameB;
-  document.getElementById('pf-a').textContent = nameA;
-  document.getElementById('pf-b').textContent = nameB;
-
-  const bills = getBillsForFilter();
-
-  // Category totals
-  const cats = { food:0, shop:0, cafe:0, transport:0, other:0 };
-  const catColors = { food:'#63A39B', shop:'#a0623a', cafe:'#8a4abf', transport:'#4a6abf', other:'#888' };
-  const catLabels = { food:'Food & drink', shop:'Shopping', cafe:'Café', transport:'Transport', other:'Other' };
-  bills.forEach(b => {
-    const cat = b.category || 'other';
-    const share = summaryPersonFilter === 'a' ? b.shareA : summaryPersonFilter === 'b' ? b.shareB : b.grandTotal;
-    cats[cat in cats ? cat : 'other'] += share || 0;
-  });
-
-  const total = Object.values(cats).reduce((s,v) => s+v, 0);
-  const donut = document.getElementById('donut-svg');
-  const legend = document.getElementById('donut-legend');
-  const r = 38, cx = 55, cy = 55, circ = 2 * Math.PI * r;
-
-  donut.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8f0ef" stroke-width="16"/>
-    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
-    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="9" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
-
-  let offset = -circ * 0.25;
-  let legendHTML = '';
-  Object.entries(cats).forEach(([key, val]) => {
-    if (val <= 0) return;
-    const len = (val / total) * circ;
-    const el = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r);
-    el.setAttribute('fill','none'); el.setAttribute('stroke', catColors[key]); el.setAttribute('stroke-width','16');
-    el.setAttribute('stroke-dasharray', `${len} ${circ}`);
-    el.setAttribute('stroke-dashoffset', -offset);
-    donut.appendChild(el);
-    offset += len;
-    legendHTML += `<div style="display:flex;align-items:center;gap:6px;">
-      <div style="width:8px;height:8px;border-radius:2px;background:${catColors[key]};flex-shrink:0;"></div>
-      <div style="flex:1;font-size:11px;color:var(--text2);">${catLabels[key]}</div>
-      <div style="font-size:11px;font-weight:500;">${fmt(val)}</div>
-    </div>`;
-  });
-  legend.innerHTML = legendHTML || '<div style="font-size:12px;color:var(--text3);">No data</div>';
-
-  // Monthly bar chart
-  const months = [];
-  const now = new Date();
-  for (let i = 4; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB', { month:'short' }), a:0, b:0 });
-  }
-  state.bills.forEach(b => {
-    const m = months.find(mo => mo.key === b.date?.slice(0,7));
-    if (m) { m.a += b.shareA || 0; m.b += b.shareB || 0; }
-  });
-  const maxVal = Math.max(...months.flatMap(m => [m.a, m.b]), 1);
-  document.getElementById('bar-chart').innerHTML = months.map(m => {
-    const hA = Math.round((m.a / maxVal) * 70);
-    const hB = Math.round((m.b / maxVal) * 70);
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div style="font-size:8px;color:var(--text3);text-align:center;">${m.a+m.b>0?fmt(m.a+m.b):''}</div>
-      <div style="flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;">
-        <div style="background:#a0e0d8;border-radius:3px 3px 0 0;height:${hB}px;"></div>
-        <div style="background:var(--acc);border-radius:3px 3px 0 0;height:${hA}px;"></div>
-      </div>
-      <div style="font-size:8px;color:${m.key===now.toISOString().slice(0,7)?'var(--acc)':'var(--text3)'};">${m.label}</div>
-    </div>`;
-  }).join('');
-
-  // Who paid more
-  const aPaid = bills.filter(b=>b.paidBy==='a').reduce((s,b)=>s+b.grandTotal,0);
-  const bPaid = bills.filter(b=>b.paidBy==='b').reduce((s,b)=>s+b.grandTotal,0);
-  const totalPaid = aPaid + bPaid;
-  const pctA = totalPaid > 0 ? Math.round(aPaid / totalPaid * 100) : 50;
-  document.getElementById('wpm-a-name').textContent = nameA;
-  document.getElementById('wpm-b-name').textContent = nameB;
-  document.getElementById('wpm-a-amt').textContent = fmt(aPaid);
-  document.getElementById('wpm-b-amt').textContent = fmt(bPaid);
-  document.getElementById('wpm-bar').style.width = pctA + '%';
-  const diff = Math.abs(aPaid - bPaid);
-  document.getElementById('wpm-label').textContent = diff < 1 ? 'Balanced' :
-    (aPaid > bPaid ? nameA : nameB) + ' paid ' + fmt(diff) + ' more';
-}
-
-// ── DYNAMIC GEMINI MODEL SELECTION ───────────────────
-let geminiModel = 'gemini-2.5-flash'; // default fallback
-
-async function fetchBestGeminiModel() {
-  if (!CONFIG.geminiApiKey) return;
-  try {
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${CONFIG.geminiApiKey}`);
-    if (!resp.ok) return;
-    const data = await resp.json();
-
-    // Filter flash models that support generateContent; exclude non-vision models
-    const flashModels = (data.models || [])
-      .filter(m => {
-        const n = m.name.toLowerCase();
-        return n.includes('flash') &&
-          (m.supportedGenerationMethods || []).includes('generateContent') &&
-          !n.includes('lite') &&   // prefer full flash over lite
-          !n.includes('tts') &&    // exclude text-to-speech models
-          !n.includes('embedding') && // exclude embedding models
-          !n.includes('aqa');      // exclude attributed question answering models
-      })
-      .map(m => m.name.replace('models/', ''))
-      .sort((a, b) => {
-        // Sort by version number descending (e.g. gemini-3.5 > gemini-2.5)
-        const verA = parseFloat(a.match(/(\d+\.\d+)/)?.[1] || '0');
-        const verB = parseFloat(b.match(/(\d+\.\d+)/)?.[1] || '0');
-        return verB - verA;
-      });
-
-    if (!flashModels.length) return;
-
-    // Try each model until one responds successfully
-    for (const model of flashModels) {
-      try {
-        const testResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] })
-        });
-        if (testResp.ok || testResp.status === 400) {
-          // 400 means model works but bad input — that's fine, model is available
-          geminiModel = model;
-          console.log('Using Gemini model:', geminiModel);
-          updateSettingsUI();
-          return;
-        }
-      } catch(e) { /* try next */ }
-    }
-  } catch(e) {
-    console.warn('Could not fetch Gemini models, using default:', geminiModel);
-  }
-}
-
-// ── FETCH GEMINI KEY FROM CONFIG TAB ─────────────────
-async function callSetConfig(key, value) {
-  if (!CONFIG.googleSheetUrl) return;
-  try {
-    await fetch(CONFIG.googleSheetUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({ action: 'setConfig', key, value }),
-    });
-  } catch(e) {
-    console.warn('setConfig failed:', e);
-  }
-}
-
-async function fetchConfigFromSheet() {
-  if (!CONFIG.googleSheetUrl) return;
-  try {
-    const resp = await fetch(CONFIG.googleSheetUrl + '?action=getConfig');
-    const data = await resp.json();
-    if (data.config) {
-      const c = data.config;
-      if (c.gemini_key)       CONFIG.geminiApiKey   = c.gemini_key;
-      if (c.person_a)         CONFIG.personA        = c.person_a;
-      if (c.person_b)         CONFIG.personB        = c.person_b;
-      if (c.currency)         CONFIG.currency       = c.currency;
-      if (c.currency_symbol)  CONFIG.currencySymbol = c.currency_symbol;
-      if (c.person_a_emails)  CONFIG.personAEmails  = String(c.person_a_emails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-      if (c.person_b_emails)  CONFIG.personBEmails  = String(c.person_b_emails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-      if (c.gs_version) {
-        const el = document.getElementById('gs-version-val');
-        if (el) el.textContent = c.gs_version;
-      }
-      updateSettingsUI();
-    }
-  } catch(e) {
-    console.warn('Could not fetch config from sheet:', e);
-  }
-}
-
-// ── SYNC FROM SHEETS ON LOAD ──────────────────────────
-async function syncFromSheets() {
-  if (!CONFIG.googleSheetUrl) return;
-  try {
-    const resp = await fetch(CONFIG.googleSheetUrl);
-    const data = await resp.json();
-    if (!data.bills || !data.bills.length) return;
-    // Rebuild state from sheets (sheets is source of truth)
-    state.bills = data.bills.map(r => ({
-      id: String(r.ID || r.id || Date.now()),
-      date: (() => { const raw = String(r.Date || r.date || '').trim(); if (!raw) return ''; const dt = new Date(raw); return isNaN(dt.getTime()) ? raw : dt.toISOString().split('T')[0]; })(),
-      place: r.Place || r.place || '',
-      category: r.Category || r.category || '',
-      paidBy: (r['Paid By'] || r.paidBy || '') === (CONFIG.personA || 'A') ? 'a' : 'b',
-      grandTotal: parseFloat(r['Grand Total'] || r.grandTotal) || 0,
-      shareA: parseFloat(r['Share A'] || r.shareA) || 0,
-      shareB: parseFloat(r['Share B'] || r.shareB) || 0,
-      items: (() => { try { return JSON.parse(r.items_json || r['items_json'] || '[]'); } catch(e) { return []; } })(),
-    }));
-    // Recalculate running balance from all bills
-    state.runningBalance = state.bills.reduce((bal, b) => {
-      return b.paidBy === 'a' ? bal + b.shareB : bal - b.shareA;
-    }, 0);
-    saveToStorage();
-    renderHome();
-  } catch(e) {
-    console.warn('Could not sync from Sheets:', e);
-  }
-}
-
-// ── GOOGLE AUTH ──────────────────────────────────────
-function initAuth() {
-  function tryInit() {
-    if (typeof google !== 'undefined' && google.accounts) {
-      google.accounts.id.initialize({
-        client_id: CONFIG.googleClientId,
-        callback: onGoogleSignIn,
-        auto_select: false,
-      });
-      google.accounts.id.renderButton(
-        document.getElementById('signin-google-btn'),
-        { theme: 'outline', size: 'large', shape: 'pill', text: 'sign_in_with' }
-      );
-    } else {
-      setTimeout(tryInit, 200);
-    }
-  }
-  tryInit();
-}
-
-async function onGoogleSignIn(response) {
-  const signinError = document.getElementById('signin-error');
-  const signinLoading = document.getElementById('signin-loading');
-  signinError.style.display = 'none';
-  signinLoading.style.display = 'block';
-
-  // If email lists not loaded yet, fetch config first
-  if (!CONFIG.personAEmails.length && !CONFIG.personBEmails.length) {
-    await fetchConfigFromSheet();
-  }
-
-  const payload = decodeJWT(response.credential);
-  const email = (payload.email || '').toLowerCase();
-
-  signinLoading.style.display = 'none';
-
-  const aEmails = CONFIG.personAEmails.map(e => e.toLowerCase());
-  const bEmails = CONFIG.personBEmails.map(e => e.toLowerCase());
-
-  if (aEmails.includes(email)) {
-    setCurrentUser('a');
-  } else if (bEmails.includes(email)) {
-    setCurrentUser('b');
-  } else {
-    signinError.textContent = `${email} is not authorised to use this app.`;
-    signinError.style.display = 'block';
-    google.accounts.id.disableAutoSelect();
-  }
-}
-
-function decodeJWT(token) {
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(b64));
-  } catch(e) { return {}; }
-}
-
-function setCurrentUser(who) {
-  currentUser = who;
-  localStorage.setItem('splitapp_user', who);
-  showApp();
-}
-
-function switchPerspective(who) {
-  currentUser = who;
-  localStorage.setItem('splitapp_user', who);
-  renderHome();
-}
-
-function showApp() {
-  document.getElementById('signin-screen').style.display = 'none';
-  document.getElementById('app').style.display = '';
-  initApp();
-  fetchBestGeminiModel();
-  syncFromSheets();
-}
-
-function showSignIn() {
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('signin-screen').style.display = 'flex';
-  document.getElementById('signin-error').style.display = 'none';
-  initAuth();
-}
-
-function signOut() {
-  currentUser = null;
-  localStorage.removeItem('splitapp_user');
-  if (typeof google !== 'undefined' && google.accounts) {
-    google.accounts.id.disableAutoSelect();
-  }
-  showSignIn();
-}
-
-function initApp() {
-  init();
-  initManualItems();
-  updateWhoPayNames();
-  ['sc','vat','disc','voucher'].forEach(k => updateToggle(k));
-}
-
-// ── BOOT ─────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  currentUser = localStorage.getItem('splitapp_user') || null;
-
-  if (currentUser) {
-    // Already signed in — show app immediately from localStorage
-    document.getElementById('signin-screen').style.display = 'none';
-    document.getElementById('app').style.display = '';
-    initApp();
-    // Fetch config + sync in background
-    fetchConfigFromSheet().then(() => {
-      fetchBestGeminiModel();
-      syncFromSheets();
-    });
-  } else {
-    // Not signed in — show sign-in screen
-    // Fetch config in background so email lists are ready when user signs in
-    fetchConfigFromSheet();
-    initAuth();
-  }
-
-  // Sync when app comes back to foreground (only if signed in)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && currentUser) syncFromSheets();
-  });
-  // Close assignment dropdowns on tap outside
-  document.addEventListener('click', () => closeAllAssignDropdowns());
-});
-</script>
-
-<!-- ════════════════════════════════════════════════════
-     GOOGLE APPS SCRIPT — deploy this as a Web App
-     Instructions: script.google.com → New project → paste → Deploy → Web App
-════════════════════════════════════════════════════
-<APPS_SCRIPT>
-function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  if (data.action === 'addBill') {
-    const b = data.bill;
-    let sheet = ss.getSheetByName('Bills') || ss.insertSheet('Bills');
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['ID','Date','Place','Category','Paid By','Grand Total','Share A','Share B','Running Balance','Saved At']);
-    }
-    sheet.appendRow([b.id, b.date, b.place, b.category, b.paidBy, b.grandTotal, b.shareA, b.shareB, b.runningBalance, new Date().toISOString()]);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doGet(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Bills');
-  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ bills: [] })).setMimeType(ContentService.MimeType.JSON);
-  const rows = sheet.getDataRange().getValues();
-  const [header, ...data] = rows;
-  const bills = data.map(r => Object.fromEntries(header.map((h,i) => [h, r[i]])));
-  return ContentService.createTextOutput(JSON.stringify({ bills })).setMimeType(ContentService.MimeType.JSON);
-}
-</APPS_SCRIPT>
--->
-
-</body>
-</html>
+# SplitApp — Project Recap
+
+> **Doc rules (for Claude):**
+> - This is the session summary doc and end-of-day handover. Updated only at end of session — not mid-session.
+> - During a session, all bug/feature tracking goes in `splitapp-backlog.md` only (smaller file, less editing overhead).
+> - End-of-day update: (1) add version rows to version table, (2) merge all outstanding items from `splitapp-backlog.md` into the Outstanding items section below, (3) update key decisions and rules as needed.
+> - This file is the single handover document passed to the next session — it should contain everything needed to resume.
+> - Never remove any existing content. If something is resolved, mark it ✅.
+> - When in doubt, add — never remove.
+
+---
+
+## Working rules (established during sessions)
+
+These rules govern how Claude works on this project. They must be followed every session.
+
+- **Discuss before coding** — always list planned changes and wait for explicit confirmation before writing any code.
+- **One item at a time** — finish and close one bug/feature before starting the next.
+- **Log first, fix later** — when a new bug or issue is found, log it to `splitapp-backlog.md` first. Do not fix immediately.
+- **Version bump is the last step** — bump version only after all edits for that item are done, but before replying to user.
+- **Version bump = two places** — always update both (1) the HTML comment header at the top of the file and (2) the hardcoded version string in Settings (search for `row-val` near "App version"). Missing either causes the Settings screen to show a stale version.
+- **Targeted reads only** — never read the full HTML file. Always grep for the target first, then read only the relevant lines.
+- **File size watch** — `splitapp.html` was ~102KB / ~2,206 lines at v1.8.6. Claude context breaks down around 700KB. At 300–400KB: split into `splitapp.html` + `splitapp.js` + `splitapp.css`. Flag file size to user when approaching 300KB.
+- **Only `splitapp-backlog.md` is updated during sessions.** `splitapp-2026-06-14.md` (this file) is updated at end of day only.
+- **New bugs found in session** — log with next available bug number, even if not fixing immediately.
+- **Settlement flow** — closed as "won't do". Users record settlements as a normal bill: one item "Settlement", assign entirely to the person who owes, paid by the settler.
+- **429 Gemini probe errors** — cosmetic only, do not affect OCR or API quota. Keep as-is.
+- **Dashboard/summary features are lower priority** — ensure bill recording and calculation functions are solid first.
+
+---
+
+A 2-person expense splitting web app built for Ploy & Nok.
+
+## What it does
+
+- Scan a receipt with the camera → Gemini Vision OCR extracts items, prices, merchant, date, and total
+- Manually enter bills with items and charges
+- Assign each item to Person A, Person B, or Shared (equal split) — via cycle tap or dropdown
+- Assignment chip is perspective-aware: current user's name always comes first in the cycle
+- Handles service charge, VAT, discount, cash voucher; grand total shown in Review screen with optional receipt comparison (✓/⚠)
+- Tracks running balance (who owes whom, and how much) — perspective flips per user
+- History with bill detail view (edit + delete)
+- Summary view
+- Google sign-in: each user identified by email; perspective-aware home, balance, and item order
+- Home screen: stacked avatars — tap back avatar to instantly switch perspective
+- PWA-ready: can be added to iOS/Android home screen and launches without browser UI
+- All data stored in Google Sheets (source of truth); local localStorage cache for fast load
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Single HTML file, plain JS/CSS, no framework |
+| Hosting | GitHub Pages (`powpopow.github.io/split-app/splitapp.html`) |
+| OCR | Gemini Vision API (dynamic model selection, auto-fallback) |
+| Backend | Google Apps Script Web App (POST = write, GET = read) |
+| Database | Google Sheets (Bills tab + Config tab) |
+| Local cache | localStorage (fast load, syncs from Sheets on startup) |
+
+## Architecture
+
+```
+[Phone camera]
+     ↓
+[Gemini Vision API]  ←  key stored in Config tab of Google Sheet
+     ↓
+[Manual entry form]  ←  OCR pre-fills this; user can edit
+     ↓
+[Review & Assign]  ←  assign items A / B / shared, add charges
+     ↓
+[Confirm & Save]
+     ↓
+[Google Apps Script]  →  [Google Sheets: Bills tab]
+```
+
+Config tab structure (Google Sheets):
+```
+key          | value
+gemini_key   | AQ.Ab8R...
+```
+
+## Files
+
+| File | Location | Purpose |
+|---|---|---|
+| `splitapp.html` | GitHub repo → GitHub Pages | The entire app |
+| `appsscript.gs` | Google Sheets → Extensions → Apps Script | Backend API |
+
+## Version history
+
+| Version | Date | Changes |
+|---|---|---|
+| v1.0.0 | 2026-06-13 | Initial build: full UI, OCR, manual entry, review, confirm, save to Sheets |
+| v1.1.0 | 2026-06-13 | Gemini key moved to Google Sheets Config tab (security); Sheet URL hardcoded |
+| v1.2.0 | 2026-06-13 | Dynamic Gemini model selection (fetches available models at runtime, picks newest Flash, auto-fallback) |
+| v1.3.0 | 2026-06-14 | OCR scan UX: cycling status messages, multi-model fallback queue, "keep page open" warning |
+| v1.4.0 | 2026-06-14 | OCR now pre-fills manual entry form instead of jumping to Review & Assign |
+| v1.4.1 | 2026-06-14 | Fix: "Next →" button on Review screen was hidden behind bottom nav bar |
+| v1.4.2 | 2026-06-14 | Fix: "Open Google Sheet" in Settings now opens actual spreadsheet (not Apps Script URL) |
+| v1.5.0 | 2026-06-14 | Cross-phone sync: sync on foreground (visibilitychange) + after save |
+| v1.6.0 | 2026-06-14 | Settings sync to Sheets: names + currency write to Config tab, load on all devices |
+| v1.6.1 | 2026-06-14 | Backend version (gs_version) shown in Settings |
+| v1.6.2 | 2026-06-14 | Fix: CORS error on POST — removed Content-Type header, added mode:no-cors |
+| v1.7.0 | 2026-06-14 | Google auth login + current user identity: sign-in screen, email-based identity, perspective-aware home + balance |
+| v1.7.1 | 2026-06-14 | Sign-in screen redesign: teal background, white card, SVG icon, "Welcome" tagline |
+| v1.7.2 | 2026-06-14 | Avatar icons: hardcoded CJ (navy #2E3250) and PP (teal) replacing letter initials throughout app |
+| v1.8.0 | 2026-06-14 | Bug #7 (history detail view) + Bug #8 (items_json in Sheets) + Feature #7 (delete + edit bill). appsscript.gs → v1.4.0 |
+| v1.8.1 | 2026-06-14 | Fix #14: edit button (wrong function name). Fix #16: Who Paid button names now update after config loads |
+| v1.8.2 | 2026-06-14 | Fix #13/#15: Bill detail replaced bottom sheet with full page (screen-bill-detail) + ← History back button. Delete navigates cleanly back to History |
+| v1.8.3 | 2026-06-14 | Fix #18: scan overlay warning now 17px bold. Fix #19: date input styled consistently. Fix #20: review screen padding-bottom 240px (charges no longer hidden). Fix #21: removed duplicate name from bill detail. Fix #9: fmtDate handles ISO datetime; syncFromSheets normalises date to YYYY-MM-DD |
+| v1.8.4 | 2026-06-14 | Fix #17: Gemini model picker now excludes tts, embedding, aqa models — only vision-capable flash models selected |
+| v1.8.5 | 2026-06-14 | Feature #12: Assignment chip split into cycle (left) + dropdown ▾ (right). Cycle order perspective-aware (current user first after Shared). Dropdown: nameA / nameB / Shared / Custom %. Custom % shows ratio on chip (e.g. 70/30) |
+| v1.8.6 | 2026-06-14 | Fix #24: Edit bill now navigates correctly to newbill screen (was goTo('entry') → screen not found → blank page) |
+| v1.8.7 | 2026-06-14 | Fix: dropdown dot colors now match chip colors (Powpow = teal, Pat = orange-brown). Fix: Review subtitle updated to "▾ for more options" |
+| v1.8.8 | 2026-06-14 | Renamed "50/50" → "Shared" throughout (chip label, dropdown option, bill detail display) |
+| v1.8.9 | 2026-06-14 | Feature #11: Grand total row added to Review screen Charges card. OCR receipt total extracted and compared to calculated total (✓ green / ⚠ amber, ฿1 rounding tolerance) |
+| v1.9.0 | 2026-06-14 | Feature #15: Home avatars now stack — current user on top, other peeking behind. Tap back avatar to switch perspective (balance, greeting, cycle order all flip). PWA meta tags added (apple-mobile-web-app-capable) so app hides browser UI when launched from home screen. Fix #25: Settings app version was hardcoded — now updated to match actual version |
+
+## App theme & visual design
+
+**Color palette:**
+| Token | Value | Used for |
+|---|---|---|
+| `--acc` | `#4A9B8E` (teal) | Balance card, nav + button, Person A chip, CTA buttons |
+| `--acc-light` | teal 10% | Person A chip background |
+| `--acc-text` | teal dark | Person A chip text |
+| Avatar A (CJ) | `#2E3250` (navy) | Powpow's avatar circle |
+| Avatar B (PP) | `--acc` (teal) | Pat's avatar circle |
+| Chip B | `#FFF0E6` bg / `#a0623a` text | Pat's assignment chip (warm orange-brown) |
+| `--bg` | `#F0F2F0` (light gray-green) | App background |
+| `--card` | `#FFFFFF` | Card surfaces |
+| `--red` | red | Balance card when user owes money |
+| `--grn` | green | Discount/voucher amounts, receipt match indicator |
+
+**Design rationale:**
+- **Teal as primary** — calm, neutral, works well for a finance/tracking app. Not too corporate (blue) or alarming (red).
+- **Navy for CJ** — distinct from teal so the two avatars are clearly different people at a glance. Dark/light contrast with the teal PP avatar.
+- **Orange-brown for Pat's chip** — warm complement to teal. Avoids red (too alarming for expense assignment) and blue (too similar to teal).
+- **Minimal card UI** — each section is a white card on light gray. Reduces visual noise, easy to scan.
+- **No gradients or heavy shadows** — keeps the app feeling light and fast. The balance card uses a flat teal fill, not a gradient.
+- **Uppercase section labels** (`RUNNING BALANCE`, `RECENT BILLS`) — small caps treatment adds structure without heavy typography.
+- **Bottom nav with teal + button** — standard mobile app pattern. The + is oversized and teal to make adding a bill the primary action.
+
+## Key design decisions
+
+**Why single HTML file?**
+Easy to host on GitHub Pages with zero build step. Anyone can view source, copy, deploy.
+
+**Why Google Sheets as database?**
+Both users can view/edit data directly in Sheets without needing a separate admin UI. Free, reliable, no server to maintain.
+
+**Why Apps Script as backend?**
+Runs inside Google's infrastructure, free tier is sufficient, no auth tokens needed for the app itself.
+
+**Why dynamic Gemini model selection?**
+Gemini models get deprecated (happened with `gemini-2.0-flash` in March 2026 — quota went to 0). Dynamic selection queries available models at runtime so the app never breaks due to model retirement.
+
+**Why OCR → manual form (v1.4.0)?**
+Original design jumped OCR straight to Review & Assign, which meant: (a) no who-paid selection, (b) no item editing, (c) blank screen on failed OCR. Sending OCR output to the manual form first lets the user review/fix before proceeding.
+
+**Why "Shared" not "50/50"?**
+"50/50" is mechanical and less intuitive. "Shared" communicates the intent — both people share this item equally — without requiring the user to think in percentages.
+
+**Why assignment chip = cycle + dropdown (v1.8.5)?**
+A single button that only cycles forces the user to tap multiple times to reach the option they want. A split chip (left = fast cycle, right ▾ = full dropdown) keeps the fast path and adds discoverability without cluttering the item row. Cycle order is perspective-aware (current user first after Shared) so the most-used assignment is always one tap away.
+
+**Why perspective-aware UI?**
+Both users see the same data but from opposite sides: balance direction, item assignment cycle order, greeting all flip based on `currentUser`. This avoids confusion ("does positive balance mean I owe or I'm owed?") and makes the app feel personal to each person.
+
+**Why stacked avatars on home (v1.9.0)?**
+Two flat avatars side by side suggested they were equal buttons. Stacking communicates "you are here" (front) vs "switch to them" (back) — a natural spatial metaphor. Tapping the back avatar is a perspective switch, not a sign-out.
+
+**Why no settlement flow?**
+A dedicated settlement screen adds complexity for a rare action. Users can record a settlement as a normal bill: one item "Settlement [amount]", assign entirely to the person who owes, paid by the settler. The balance adjusts correctly with no extra code.
+
+**Why ignore 429 errors from Gemini model probe?**
+The model probe at startup occasionally gets rate-limited (429). This is cosmetic — it doesn't affect the actual OCR calls or the API quota. Adding retry logic adds complexity for no real user benefit.
+
+---
+
+> **Note:** Bugs and planned features are tracked live in `splitapp-backlog.md`. The tables below are the original session snapshot — status updated to reflect end-of-day state. For the current live backlog, always refer to `splitapp-backlog.md`.
+
+## Outstanding bugs / known issues (original snapshot — status updated)
+
+| # | Description | Background | Priority | Complexity | Logged |
+|---|---|---|---|---|---|
+| 1 | ~~"Next →" on Review screen hidden behind nav bar~~ | Fixed panel and nav bar both at `bottom:0`, nav rendered on top | ✅ Fixed v1.4.1 | Low | 2026-06-14 |
+| 2 | ~~"Open Google Sheet" in Settings opened Apps Script URL~~ | `openGSheet()` was using the backend endpoint URL instead of the spreadsheet edit URL | ✅ Fixed v1.4.2 | Low | 2026-06-14 |
+| 3 | Person names default to "Person A / Person B" | Names are blank until user manually sets them in Settings. No prompt or onboarding to do this. | Low | Low | 2026-06-14 |
+| 4 | Summary donut chart always shows ~75% fill | Bug in `stroke-dasharray` — deprioritised, dashboard features deferred until core bill flow is solid | Low (deferred) | Low | 2026-06-14 |
+| 5 | Summary donut chart does not visually update per person filter | Linked to bug #4. Deferred. | Low (deferred) | Low | 2026-06-14 |
+
+---
+
+## Planned features / next steps (original snapshot — status updated)
+
+| # | Feature | Background | Priority | Complexity | Logged |
+|---|---|---|---|---|---|
+| 1 | ~~**Cross-phone sync**~~ | Sync on foreground (visibilitychange) + after save. Deployed v1.5.0. | ✅ Done | Low | 2026-06-14 |
+| 1b | ~~**Settings sync to Sheets**~~ | Person names + currency now write to Config tab via setConfig. All devices load same settings on startup. Deployed v1.6.0 + appsscript v1.2.0. | ✅ Done | Low | 2026-06-14 |
+| 2 | ~~**Google auth login**~~ | Google Identity Services (GIS), client-side OAuth. Email-matched to person A/B. `currentUser` in localStorage drives all perspective rendering. Deployed v1.7.0. | ✅ Done v1.7.0 | Medium–High | 2026-06-14 |
+| 3 | **Set person names onboarding** | Currently defaults to "Person A / Person B" with no prompt. New users won't know to go to Settings. | Medium | Low | 2026-06-14 |
+| 4 | ~~**Add app to home screen**~~ | PWA meta tags (`apple-mobile-web-app-capable` etc.) added in v1.9.0. iOS: delete existing icon and re-add from Safari after pushing update. Android: same via Chrome. | ✅ Done v1.9.0 | Low | 2026-06-14 |
+| 5 | **Test non-receipt image** | If user uploads a non-receipt photo, OCR may return empty or garbage. Expected behaviour: land on manual form with alert "No items found". Needs verification. | Medium | None (testing) | 2026-06-14 |
+| 6 | ~~**Settlement flow**~~ | Won't do — users record a settlement as a normal bill: one item "Settlement", assign entirely to the person who owes, paid by the settler. Balance adjusts correctly. | ✅ Closed (won't do) | — | 2026-06-14 |
+| 7 | ~~**Delete saved bill**~~ | Delete from History detail page calls Sheets API and reverses balance. Deployed v1.8.0. | ✅ Done v1.8.0 | Medium | 2026-06-14 |
+
+---
+
+## Google auth — discussion notes ✅ Done v1.7.0
+
+~~Pros: prevents strangers from accessing the app if URL is shared accidentally.
+Cons: OAuth on a static GitHub Pages site is non-trivial. Options include:
+- Google Identity Services (client-side only, no server needed) — simplest
+- Restrict to specific Google account(s)
+- Alternative: simple PIN/password stored in Config tab (no Google auth needed)
+
+Decision pending — discuss before building.~~
+
+**Implemented**: Google Identity Services (GIS), client-side OAuth, no server needed. Each user's email is matched against `person_a_emails` / `person_b_emails` in the Config tab to determine identity. `currentUser` ('a' or 'b') stored in localStorage. Drives all perspective-aware rendering throughout the app.
+
+---
+
+## Deployment steps (for reference)
+
+1. Edit `splitapp.html` locally
+2. Push to GitHub (`main` branch, `/` root)
+3. GitHub Pages auto-deploys to `https://powpopow.github.io/split-app/splitapp.html`
+4. Apps Script changes: open Google Sheet → Extensions → Apps Script → paste `appsscript.gs` → Deploy → New deployment (or manage existing)
+
+---
+
+## Outstanding items (merged from backlog — as of end of 2026-06-14)
+
+> This section is the merged state of `splitapp-backlog.md` at end of session. Next session: work from this section; log new items to `splitapp-backlog.md` during the session; merge again at end of day.
+
+### Bugs
+
+| # | Description | Priority | Complexity | Notes |
+|---|---|---|---|---|
+| 3 | Person names default to "Person A / Person B" — no onboarding prompt | Low | Low | Names are blank until user goes to Settings manually. New users won't know to do this. |
+| 4 | Summary donut chart always shows ~75% fill | Low (deferred) | Low | `stroke-dasharray` bug. Deferred — dashboard features lower priority until core bill flow is solid. |
+| 5 | Summary donut chart doesn't update arc per person filter | Low (deferred) | Low | Linked to #4. Deferred. |
+| 6 | OCR does not extract vouchers/discounts from receipt | Medium | Medium | OCR extracts items, SC%, VAT% but ignores voucher/discount amounts. User must enter manually in Review screen. |
+| 11 | "Person A / Person B" sublabel redundant in Settings once name is set | Low | Low | Should change to "Member 1 / Member 2" or hide when real name is already set. |
+| 12 | Avatar initials hardcoded (CJ / PP) | Medium | Low | Should auto-derive from display name (first + last initial). Needs fallback for single-word names. |
+
+### Features
+
+| # | Feature | Priority | Complexity | Notes |
+|---|---|---|---|---|
+| 3 | Set person names onboarding | Medium | Low | First-launch prompt or redirect to Settings if names are still default. |
+| 5 | Test non-receipt image | Medium | None (testing) | Upload non-receipt photo → should land on manual form with "No items found" alert. Needs verification. |
+| 9 | Drag-to-reorder charges | Medium | High | Charge order (SC → VAT → discount) is hardcoded. Some receipts apply discount before tax. Reordering changes the tax base calculation. |
+| 10 | Discount split type selector | High | Low | When discount is toggled on: choose 50/50 (equal) or proportional (by item share). Currently always proportional. UI: toggle/segmented control under discount amount input. |
+| 13 | File size split (~300–400KB threshold) | Low (monitor) | Medium | File was ~102KB / ~2,206 lines at v1.8.6. Split into `splitapp.html` + `splitapp.js` + `splitapp.css` when approaching 300KB. |
+| 14 | User-configurable avatar/chip color | Medium | Medium | Preset color palette per person in Settings. Saves to Config tab. Applies to: avatar circle, chip-a/chip-b background, dropdown dots. |
