@@ -2,6 +2,13 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.26 (2026-06-16)
+    - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
+    - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
+  v2.1.25 (2026-06-16)
+    - Polish: Year dropdown "All years" → "All time" with proper teal pill button style
+    - Polish: Bar chart taller (chartH 110→155, container 120→170px)
+    - UX: Cost Breakdown — removed settlement sentence ("Powpow owes Pat ฿X")
   v2.1.24 (2026-06-16)
     - Fix: Bar chart month/3m keys off by one month in UTC+7 — replaced toISOString() with local date formatting for barMonths keys
     - Polish: Donut category colors updated to match app palette (shop→#5B8FD4, cafe→#9B7BC4, transport→#6AAF8A)
@@ -530,7 +537,10 @@ const CONFIG = {
 
   <!-- HISTORY -->
   <div id="screen-history" class="screen">
-    <div class="page-header"><div class="page-title">History</div></div>
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <div class="page-title">History</div>
+      <div id="history-avatars" style="padding-right:4px;"></div>
+    </div>
     <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
       <div class="chip chip-a" style="white-space:nowrap;" onclick="filterHistory('all')" id="hf-all">All time</div>
       <div class="chip chip-shared" style="white-space:nowrap;" onclick="filterHistory('month')" id="hf-month">This month</div>
@@ -589,7 +599,7 @@ const CONFIG = {
       <!-- YEAR dropdown: grid of years with data -->
       <div id="sf-all-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
         <div id="sf-year-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:14px;"></div>
-        <div onclick="selectYear(null)" style="padding:0 14px 14px; text-align:center; font-size:13px; color:var(--text3); cursor:pointer;">All years</div>
+        <div onclick="selectYear(null)" style="margin:0 14px 14px;padding:10px;text-align:center;font-size:13px;font-weight:500;color:var(--acc-text);background:var(--acc-light);border-radius:10px;cursor:pointer;">All time</div>
       </div>
 
       <!-- Shared overlay -->
@@ -618,7 +628,7 @@ const CONFIG = {
         <div class="sec-label" style="padding:0;">Monthly spending</div>
         <div id="bar-detail" style="font-size:12px; color:var(--text3);"></div>
       </div>
-      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:120px;"></div>
+      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:170px;"></div>
       <div style="display:flex; gap:14px; margin-top:8px; justify-content:center;">
         <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
           <div style="width:8px;height:8px;border-radius:2px;background:#2E3250;"></div>
@@ -654,7 +664,6 @@ const CONFIG = {
           <div style="border-top:0.5px solid var(--border);padding-top:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Net</div><div style="font-size:15px;font-weight:700;" id="cbd-net-b"></div></div>
         </div>
       </div>
-      <div style="margin-top:12px;padding:10px 12px;background:var(--bg-secondary,#f0f5f4);border-radius:10px;font-size:13px;font-weight:500;color:var(--text2);text-align:center;" id="cbd-summary"></div>
     </div>
   </div>
 
@@ -708,7 +717,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.24</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.26</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1442,6 +1451,21 @@ function filterHistory(f) {
 }
 
 function renderHistory() {
+  // Avatar toggle — same as home
+  const nameA = CONFIG.personA || 'Person A';
+  const nameB = CONFIG.personB || 'Person B';
+  const otherWho = currentUser === 'b' ? 'a' : 'b';
+  const otherName = currentUser === 'b' ? nameA : nameB;
+  const meAv = currentUser === 'b' ? 'av-b' : 'av-a';
+  const meInit = currentUser === 'b' ? 'PP' : 'CJ';
+  const otherAv = currentUser === 'b' ? 'av-a' : 'av-b';
+  const otherInit = currentUser === 'b' ? 'CJ' : 'PP';
+  const hAv = document.getElementById('history-avatars');
+  if (hAv) hAv.innerHTML = `<div style="position:relative;width:54px;height:36px;display:inline-block;">
+    <div class="avatar ${otherAv}" style="position:absolute;left:0;z-index:1;opacity:0.75;cursor:pointer;box-shadow:0 0 0 2px var(--bg);" onclick="switchPerspective('${otherWho}')" title="Switch to ${otherName}">${otherInit}</div>
+    <div class="avatar ${meAv}" style="position:absolute;right:0;z-index:2;box-shadow:0 0 0 2px var(--bg);">${meInit}</div>
+  </div>`;
+
   const thisMonth = new Date().toISOString().slice(0, 7);
   let bills = [...state.bills].reverse();
   if (historyFilter === 'month') bills = bills.filter(b => b.date && b.date.slice(0,7) === thisMonth);
@@ -2790,7 +2814,7 @@ function renderBarChart() {
   const barMonths = _summaryBarData;
   const now = new Date();
   const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
-  const chartH = 110;
+  const chartH = 155;
   const activeMark = summaryFilter === 'week'  ? summaryWeekAnchor :
                      summaryFilter === 'month' ? summarySelectedMonth :
                      summaryFilter === '3m'    ? summary3mAnchor :
@@ -2979,7 +3003,7 @@ function renderSummary() {
   const fmtNet = (el, val) => {
     if (!el) return;
     if (val > 0.01) { el.textContent = '+'+fmt(val); el.style.color='var(--acc)'; }
-    else if (val < -0.01) { el.textContent = fmt(val); el.style.color='#E05454'; }
+    else if (val < -0.01) { el.textContent = '–'+fmt(-val); el.style.color='#E05454'; }
     else { el.textContent = '±0'; el.style.color='var(--text3)'; }
   };
   fmtNet(netAEl, aNet); fmtNet(netBEl, bNet);
@@ -3187,6 +3211,7 @@ function switchPerspective(who) {
   currentUser = who;
   localStorage.setItem('splitapp_user', who);
   renderHome();
+  renderHistory();
 }
 
 function showApp() {
