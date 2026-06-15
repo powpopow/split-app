@@ -223,7 +223,7 @@
   --acc-light: #EAF4F2;
   --acc-dark: #4a7d77;
   --acc-text: #2a6b64;
-  --red: #E05454;
+  --red: #DC9090;
   --red-light: #FCEAEA;
   --grn: #2D9B5E;
   --grn-light: #E8F7EE;
@@ -1146,10 +1146,10 @@ function renderHome() {
     lblEl.textContent = 'All settled up';
   } else if (myBal > 0) {
     card.style.background = 'var(--acc)';
-    lblEl.textContent = 'Get ' + fmt(myBal) + ' from ' + otherName;
+    lblEl.textContent = 'Get from ' + otherName;
   } else {
     card.style.background = 'var(--red)';
-    lblEl.textContent = 'Pay ' + fmt(myBal) + ' to ' + otherName;
+    lblEl.textContent = 'Pay to ' + otherName;
   }
 
   // Stats
