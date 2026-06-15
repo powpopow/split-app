@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.10 (2026-06-15)
+    - UX #49 (real fix): Per-person fixed-amount row now uses visibility:hidden instead of display:none — Add button no longer shifts position when Fixed ฿ is selected, so tapping the inputs can't accidentally trigger Add.
+  v2.1.9 (2026-06-15)
+    - UX #49: Fixed ฿ discount sheet — add type="button" to Add/Delete buttons so iOS keyboard "Done" no longer triggers them. If both per-person amounts are 0 on save, auto-splits 50/50 instead of alerting.
+  v2.1.8 (2026-06-15)
+    - Bug #4+#5: Donut chart arcs now render correctly — replaced stroke-dashoffset positioning with rotate() transform per arc + stroke-dasharray: len (circ-len). Per-person filter (Both/A/B) now visually changes arc proportions.
   v2.1.7 (2026-06-15)
     - Polish #44: "Please keep this page open" text on scan overlay now blinks (opacity pulse animation)
     - UX #45: Shared mode ▾ replaced with "Custom" chip badge — tapping opens Custom split sheet directly; item circle tap still opens A/B/Custom dropdown
@@ -617,7 +623,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.7</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.10</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -979,7 +985,7 @@ const CONFIG = {
         <option value="fixed">Fixed ฿</option>
       </select>
     </div>
-    <div id="disc-sheet-fixed-row" style="display:none;margin-bottom:8px;">
+    <div id="disc-sheet-fixed-row" style="visibility:hidden;pointer-events:none;margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="disc-sheet-a-label">A</div>
@@ -995,8 +1001,8 @@ const CONFIG = {
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Label <span style="color:var(--text3);">(optional)</span></div>
       <input type="text" id="disc-sheet-label" placeholder="e.g. Voucher, Coupon, Staff discount" style="width:100%;">
     </div>
-    <button class="btn" id="disc-sheet-save-btn" onclick="saveDiscSheet()">Add</button>
-    <button class="btn danger" id="disc-sheet-delete-btn" onclick="deleteFromDiscSheet()" style="display:none;margin-top:8px;">Delete discount</button>
+    <button type="button" class="btn" id="disc-sheet-save-btn" onclick="saveDiscSheet()">Add</button>
+    <button type="button" class="btn danger" id="disc-sheet-delete-btn" onclick="deleteFromDiscSheet()" style="display:none;margin-top:8px;">Delete discount</button>
   </div>
 </div>
 
@@ -2211,7 +2217,9 @@ function openDiscSheet(context, existingId) {
   const splitType = d ? (d.assignTo || 'split') : 'split';
   if (document.getElementById('disc-sheet-split-type')) document.getElementById('disc-sheet-split-type').value = splitType;
   const isFixed = splitType === 'fixed';
-  document.getElementById('disc-sheet-fixed-row').style.display = isFixed ? '' : 'none';
+  const fixedRow = document.getElementById('disc-sheet-fixed-row');
+  fixedRow.style.visibility = isFixed ? '' : 'hidden';
+  fixedRow.style.pointerEvents = isFixed ? '' : 'none';
   document.getElementById('disc-sheet-amtA').value = d ? (d.amtA || '') : '';
   document.getElementById('disc-sheet-amtB').value = d ? (d.amtB || '') : '';
   document.getElementById('disc-sheet-a-label').textContent = nameA;
@@ -2221,7 +2229,9 @@ function openDiscSheet(context, existingId) {
 }
 
 function onDiscSplitTypeChange(val) {
-  document.getElementById('disc-sheet-fixed-row').style.display = val === 'fixed' ? '' : 'none';
+  const fixedRow = document.getElementById('disc-sheet-fixed-row');
+  fixedRow.style.visibility = val === 'fixed' ? '' : 'hidden';
+  fixedRow.style.pointerEvents = val === 'fixed' ? '' : 'none';
   // Amount field stays visible for all modes — used as total reference for Fixed ฿ auto-fill
 }
 
@@ -2252,9 +2262,11 @@ function saveDiscSheet() {
   if (_discSheetContext === 'shared') {
     const assignTo = document.getElementById('disc-sheet-split-type').value || 'split';
     if (assignTo === 'fixed') {
-      const amtA = parseFloat(document.getElementById('disc-sheet-amtA').value) || 0;
-      const amtB = parseFloat(document.getElementById('disc-sheet-amtB').value) || 0;
-      if (!amtA && !amtB) { alert('Enter at least one amount.'); return; }
+      const total = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
+      if (!total) { alert('Enter a total amount.'); return; }
+      let amtA = parseFloat(document.getElementById('disc-sheet-amtA').value) || 0;
+      let amtB = parseFloat(document.getElementById('disc-sheet-amtB').value) || 0;
+      if (!amtA && !amtB) { amtA = Math.round(total / 2 * 100) / 100; amtB = Math.round((total - amtA) * 100) / 100; }
       entry = { amt: amtA + amtB, amtA, amtB, label: label || 'Voucher', assignTo: 'fixed' };
     } else {
       const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
@@ -2520,7 +2532,7 @@ function renderSummary() {
     <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
     <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="9" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
 
-  let offset = -circ * 0.25;
+  let cumLen = 0;
   let legendHTML = '';
   Object.entries(cats).forEach(([key, val]) => {
     if (val <= 0) return;
@@ -2528,10 +2540,11 @@ function renderSummary() {
     const el = document.createElementNS('http://www.w3.org/2000/svg','circle');
     el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r);
     el.setAttribute('fill','none'); el.setAttribute('stroke', catColors[key]); el.setAttribute('stroke-width','16');
-    el.setAttribute('stroke-dasharray', `${len} ${circ}`);
-    el.setAttribute('stroke-dashoffset', -offset);
+    el.setAttribute('stroke-dasharray', `${len} ${circ - len}`);
+    el.setAttribute('stroke-dashoffset', '0');
+    el.setAttribute('transform', `rotate(${-90 + (cumLen / circ) * 360} ${cx} ${cy})`);
     donut.appendChild(el);
-    offset += len;
+    cumLen += len;
     legendHTML += `<div style="display:flex;align-items:center;gap:6px;">
       <div style="width:8px;height:8px;border-radius:2px;background:${catColors[key]};flex-shrink:0;"></div>
       <div style="flex:1;font-size:11px;color:var(--text2);">${catLabels[key]}</div>
