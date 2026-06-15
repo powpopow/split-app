@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.24 (2026-06-16)
+    - Fix: Bar chart month/3m keys off by one month in UTC+7 — replaced toISOString() with local date formatting for barMonths keys
+    - Polish: Donut category colors updated to match app palette (shop→#5B8FD4, cafe→#9B7BC4, transport→#6AAF8A)
+    - UX: Filter chips — ▾ only on active chip (right-aligned); inactive chips show plain label; chips taller (6px vertical padding)
   v2.1.23 (2026-06-16)
     - Fix: Bar chart showing ฿NaN — barMonths entries were missing a:0, b:0 initialisation after addBills() refactor
   v2.1.22 (2026-06-16)
@@ -548,10 +552,10 @@ const CONFIG = {
     <div class="page-header"><div class="page-title">Summary</div></div>
     <div style="position:relative;">
       <div style="display:flex; gap:6px; padding:0 12px 8px;">
-        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week" style="flex:1;text-align:center;">Week ▾</div>
-        <div class="chip chip-a"      onclick="filterSummary('month')" id="sf-month" style="flex:1;text-align:center;">Month ▾</div>
-        <div class="chip chip-shared" onclick="filterSummary('3m')"   id="sf-3m"    style="flex:1;text-align:center;">3 mo ▾</div>
-        <div class="chip chip-shared" onclick="filterSummary('all')"  id="sf-all"   style="flex:1;text-align:center;">Year ▾</div>
+        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week" style="flex:1;justify-content:center;padding:6px 10px;">Week</div>
+        <div class="chip chip-a"      onclick="filterSummary('month')" id="sf-month" style="flex:1;justify-content:center;padding:6px 10px;"><span style="flex:1;text-align:center;padding-left:14px;">Month</span><span style="font-size:9px;opacity:0.65;width:14px;text-align:center;">▾</span></div>
+        <div class="chip chip-shared" onclick="filterSummary('3m')"   id="sf-3m"    style="flex:1;justify-content:center;padding:6px 10px;">3 mo</div>
+        <div class="chip chip-shared" onclick="filterSummary('all')"  id="sf-all"   style="flex:1;justify-content:center;padding:6px 10px;">Year</div>
       </div>
 
       <!-- WEEK dropdown: navigation only -->
@@ -704,7 +708,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.23</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.24</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -2622,14 +2626,20 @@ function openSummaryDd(id, renderFn) {
 }
 
 function updateChipLabels() {
-  const chips = {
-    week:  summaryFilter === 'week'  ? weekRangeLabel(summaryWeekAnchor) + ' ▾' : 'Week ▾',
-    month: summaryFilter === 'month' ? new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short',year:'numeric'}) + ' ▾' : 'Month ▾',
-    '3m':  summaryFilter === '3m'    ? range3mLabel(summary3mAnchor) + ' ▾' : '3 mo ▾',
-    all:   summaryFilter === 'all'   ? (summaryYear ? summaryYear + ' ▾' : 'Year ▾') : 'Year ▾',
+  const labels = {
+    week:  summaryFilter === 'week'  ? weekRangeLabel(summaryWeekAnchor) : 'Week',
+    month: summaryFilter === 'month' ? new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short',year:'numeric'}) : 'Month',
+    '3m':  summaryFilter === '3m'    ? range3mLabel(summary3mAnchor) : '3 mo',
+    all:   summaryFilter === 'all'   ? (summaryYear ? String(summaryYear) : 'Year') : 'Year',
   };
-  Object.entries(chips).forEach(([k, txt]) => {
-    const el = document.getElementById('sf-'+k); if (el) el.textContent = txt;
+  ['week','month','3m','all'].forEach(k => {
+    const el = document.getElementById('sf-'+k);
+    if (!el) return;
+    if (k === summaryFilter) {
+      el.innerHTML = `<span style="flex:1;text-align:center;padding-left:14px;">${labels[k]}</span><span style="font-size:9px;opacity:0.65;width:14px;text-align:center;">▾</span>`;
+    } else {
+      el.textContent = labels[k];
+    }
   });
 }
 
@@ -2863,7 +2873,7 @@ function renderSummary() {
 
   // Category totals
   const cats = { food:0, shop:0, cafe:0, transport:0, other:0 };
-  const catColors = { food:'#63A39B', shop:'#a0623a', cafe:'#8a4abf', transport:'#4a6abf', other:'#888' };
+  const catColors = { food:'#63A39B', shop:'#5B8FD4', cafe:'#9B7BC4', transport:'#6AAF8A', other:'#888' };
   const catLabels = { food:'Food & drink', shop:'Shopping', cafe:'Café', transport:'Transport', other:'Other' };
   bills.forEach(b => {
     const cat = b.category || 'other';
@@ -2919,7 +2929,7 @@ function renderSummary() {
     const endDate = new Date(summary3mAnchor + '-02');
     for (let i = 2; i >= 0; i--) {
       const d = new Date(endDate.getFullYear(), endDate.getMonth() - i, 1);
-      const key = d.toISOString().slice(0,7);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       barMonths.push({ key, a:0, b:0, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
     addBills(state.bills);
@@ -2937,7 +2947,7 @@ function renderSummary() {
     const sel = new Date(summarySelectedMonth + '-02');
     for (let i = 5; i >= 0; i--) {
       const d = new Date(sel.getFullYear(), sel.getMonth() - i, 1);
-      const key = d.toISOString().slice(0,7);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       barMonths.push({ key, a:0, b:0, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
     addBills(state.bills);
