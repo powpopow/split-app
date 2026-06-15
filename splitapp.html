@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.0.2 (2026-06-15)
+    - Fix: Sync & refresh now calls location.reload() after syncFromSheets() — actually refreshes app code
+    - Fix: Assign mode dropdown options stopPropagation so A/B clicks work correctly
+    - Fix: Shared option hidden from dropdown when item is already Shared
+    - Fix: Person boxes z-index:1 so items card (z-index:10) dropdown appears above them
   v2.0.1 (2026-06-15)
     - Bug #31: Custom split % mode now shows Total line (was missing, only ฿ and Qty modes had it)
     - Personal discount rows: removed label input — amount only
@@ -565,7 +570,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.1</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.2</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -684,7 +689,7 @@ const CONFIG = {
     </div>
 
     <!-- Person split boxes -->
-    <div id="rv-person-boxes" style="margin:12px 14px 0;"></div>
+    <div id="rv-person-boxes" style="margin:12px 14px 0;position:relative;z-index:1;"></div>
 
     <div class="sec-label">Charges</div>
     <div class="card" style="margin-top:0;">
@@ -1689,10 +1694,10 @@ function renderReviewItems() {
           <div class="assign-chip ${chipClass}" style="padding-left:0;">
             <div class="chip-dd-btn" onclick="setAssignDirect(${i},'custom');event.stopPropagation();" style="padding:4px 8px;">▾</div>
           </div>
-          <div class="assign-dropdown" id="assign-dd-${i}">
+          <div class="assign-dropdown" id="assign-dd-${i}" onclick="event.stopPropagation()">
             <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
             <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
-            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
+            ${it.assignment !== 'shared' ? `<div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>` : ''}
             <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
           </div>
         </div>
@@ -2465,7 +2470,7 @@ async function forceRefresh() {
   const el = document.querySelector('[onclick="forceRefresh()"] .row-val');
   if (el) el.style.opacity = '0.4';
   await syncFromSheets();
-  if (el) el.style.opacity = '1';
+  location.reload();
 }
 
 // ── SYNC FROM SHEETS ON LOAD ──────────────────────────
