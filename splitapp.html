@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.22 (2026-06-16)
+    - Polish: Bar chart taller (chartH 70→110, container 90→120px), labels 8→10px; bar/legend colors now match avatar colors (A=#2E3250 navy, B=#5B8FD4 blue); donut SVG 110→150px, r 38→52, stroke-width 16→18 for larger ring
   v2.1.21 (2026-06-16)
     - Feature: All Summary filter tabs now have range navigation — Week: second tap opens ‹ Jun 9–15 › navigation; 3 months: second tap opens ‹ Apr–Jun › 3-month block navigation; Year: "All time" renamed to "Year", second tap opens year grid picker (only years with data shown); chip labels update to show selected range; all filters clamp to earliest bill date/year
   v2.1.20 (2026-06-16)
@@ -599,7 +601,7 @@ const CONFIG = {
         </div>
       </div>
       <div class="donut-wrap">
-        <svg id="donut-svg" width="110" height="110" viewBox="0 0 110 110" style="flex-shrink:0;"></svg>
+        <svg id="donut-svg" width="150" height="150" viewBox="0 0 150 150" style="flex-shrink:0;"></svg>
         <div id="donut-legend" style="flex:1; display:flex; flex-direction:column; gap:7px;"></div>
       </div>
     </div>
@@ -610,14 +612,14 @@ const CONFIG = {
         <div class="sec-label" style="padding:0;">Monthly spending</div>
         <div id="bar-detail" style="font-size:12px; color:var(--text3);"></div>
       </div>
-      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:90px;"></div>
+      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:120px;"></div>
       <div style="display:flex; gap:14px; margin-top:8px; justify-content:center;">
         <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
-          <div style="width:8px;height:8px;border-radius:2px;background:var(--acc);"></div>
+          <div style="width:8px;height:8px;border-radius:2px;background:#2E3250;"></div>
           <span id="legend-a">Person A</span>
         </div>
         <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
-          <div style="width:8px;height:8px;border-radius:2px;background:#a0e0d8;"></div>
+          <div style="width:8px;height:8px;border-radius:2px;background:#5B8FD4;"></div>
           <span id="legend-b">Person B</span>
         </div>
       </div>
@@ -700,7 +702,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.17</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.22</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -2769,28 +2771,29 @@ function selectYear(yr) {
   renderSummary();
 }
 
+const BAR_CLR_A = '#2E3250';
+const BAR_CLR_B = '#5B8FD4';
+
 function renderBarChart() {
-  const nameA = CONFIG.personA || 'Person A';
-  const nameB = CONFIG.personB || 'Person B';
   const barMonths = _summaryBarData;
   const now = new Date();
   const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
-  const chartH = 70;
+  const chartH = 110;
   const activeMark = summaryFilter === 'week'  ? summaryWeekAnchor :
                      summaryFilter === 'month' ? summarySelectedMonth :
                      summaryFilter === '3m'    ? summary3mAnchor :
                      now.toISOString().slice(0,7);
   document.getElementById('bar-chart').innerHTML = barMonths.map((m, i) => {
-    const hA = m.a > 0 ? Math.max(2, Math.round((m.a / maxBarVal) * chartH)) : 0;
-    const hB = m.b > 0 ? Math.max(2, Math.round((m.b / maxBarVal) * chartH)) : 0;
+    const hA = m.a > 0 ? Math.max(3, Math.round((m.a / maxBarVal) * chartH)) : 0;
+    const hB = m.b > 0 ? Math.max(3, Math.round((m.b / maxBarVal) * chartH)) : 0;
     const isActive = m.key === activeMark;
     const isSel = i === summaryBarIdx;
-    return `<div onclick="selectBarIdx(${i})" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;border-radius:6px;padding:2px 1px;background:${isSel?'rgba(99,163,155,.10)':'transparent'};">
+    return `<div onclick="selectBarIdx(${i})" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border-radius:6px;padding:2px 1px;background:${isSel?'rgba(46,50,80,.07)':'transparent'};">
       <div style="width:100%;display:flex;align-items:flex-end;justify-content:center;gap:1px;height:${chartH}px;">
-        <div style="width:46%;background:var(--acc);border-radius:2px 2px 0 0;height:${hA}px;opacity:${isSel||summaryBarIdx===-1?1:0.45};transition:opacity .15s;"></div>
-        <div style="width:46%;background:#a0e0d8;border-radius:2px 2px 0 0;height:${hB}px;opacity:${isSel||summaryBarIdx===-1?1:0.45};transition:opacity .15s;"></div>
+        <div style="width:46%;background:${BAR_CLR_A};border-radius:3px 3px 0 0;height:${hA}px;opacity:${isSel||summaryBarIdx===-1?1:0.35};transition:opacity .15s;"></div>
+        <div style="width:46%;background:${BAR_CLR_B};border-radius:3px 3px 0 0;height:${hB}px;opacity:${isSel||summaryBarIdx===-1?1:0.35};transition:opacity .15s;"></div>
       </div>
-      <div style="font-size:8px;font-weight:${isSel?'600':'400'};color:${isSel?'var(--acc)':isActive?'var(--acc)':'var(--text3)'};">${m.label}</div>
+      <div style="font-size:10px;font-weight:${isSel?'700':'400'};color:${isSel?BAR_CLR_A:isActive?'var(--acc)':'var(--text3)'};">${m.label}</div>
     </div>`;
   }).join('');
 }
@@ -2806,8 +2809,8 @@ function selectBarIdx(i) {
     const m = _summaryBarData[summaryBarIdx];
     if (m && detail) {
       detail.innerHTML = `<span style="font-weight:600;color:var(--text);">${m.longLabel}</span>&ensp;`
-        + `<span style="color:var(--acc);">▌${fmt(m.a)}</span>&ensp;`
-        + `<span style="color:#63B8AF;">▌${fmt(m.b)}</span>`;
+        + `<span style="color:${BAR_CLR_A};">▌${fmt(m.a)}</span>&ensp;`
+        + `<span style="color:${BAR_CLR_B};">▌${fmt(m.b)}</span>`;
     }
   }
   renderBarChart();
@@ -2869,11 +2872,11 @@ function renderSummary() {
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
   const donut = document.getElementById('donut-svg');
   const legend = document.getElementById('donut-legend');
-  const r = 38, cx = 55, cy = 55, circ = 2 * Math.PI * r;
+  const r = 52, cx = 75, cy = 75, circ = 2 * Math.PI * r;
 
-  donut.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8f0ef" stroke-width="16"/>
-    <text x="${cx}" y="${cy-3}" text-anchor="middle" font-size="9" font-weight="500" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
-    <text x="${cx}" y="${cy+9}" text-anchor="middle" font-size="9" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
+  donut.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8f0ef" stroke-width="18"/>
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
+    <text x="${cx}" y="${cy+11}" text-anchor="middle" font-size="10" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
 
   let cumLen = 0;
   let legendHTML = '';
@@ -2882,7 +2885,7 @@ function renderSummary() {
     const len = (val / total) * circ;
     const el = document.createElementNS('http://www.w3.org/2000/svg','circle');
     el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r);
-    el.setAttribute('fill','none'); el.setAttribute('stroke', catColors[key]); el.setAttribute('stroke-width','16');
+    el.setAttribute('fill','none'); el.setAttribute('stroke', catColors[key]); el.setAttribute('stroke-width','18');
     el.setAttribute('stroke-dasharray', `${len} ${circ - len}`);
     el.setAttribute('stroke-dashoffset', '0');
     el.setAttribute('transform', `rotate(${-90 + (cumLen / circ) * 360} ${cx} ${cy})`);
