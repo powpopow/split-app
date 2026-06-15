@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.11 (2026-06-15)
+  v2.1.12 (2026-06-15)
     - UX #49 (real fix): Per-person fixed-amount row now uses visibility:hidden instead of display:none — Add button no longer shifts position when Fixed ฿ is selected, so tapping the inputs can't accidentally trigger Add.
   v2.1.9 (2026-06-15)
     - UX #49: Fixed ฿ discount sheet — add type="button" to Add/Delete buttons so iOS keyboard "Done" no longer triggers them. If both per-person amounts are 0 on save, auto-splits 50/50 instead of alerting.
@@ -623,7 +623,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.11</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.12</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -780,6 +780,7 @@ const CONFIG = {
         <div style="font-size:13px;padding-top:2px;">Vouchers <span style="font-size:10px;color:var(--text3);">post-tax</span></div>
         <div onclick="addSharedDiscount()" style="font-size:12px;color:var(--acc);cursor:pointer;padding:2px 0;">+ Add</div>
       </div>
+      <div id="rv-ocr-disc-notice" style="display:none;font-size:11px;color:var(--text3);padding:2px 14px 6px;"></div>
       <div id="rv-shared-discounts" style="padding:0 0 4px;"></div>
       <!-- Grand total -->
       <div class="card-row" style="border-top:0.5px solid var(--border);margin-top:4px;padding-top:12px;">
@@ -1027,6 +1028,7 @@ let historyFilter = 'all';
 let whoPaidManual = null;
 let editingBillId = null;
 let _ocrReceiptTotal = null;
+let _ocrDiscounts = [];
 
 // ── INIT ─────────────────────────────────────────────
 function init() {
@@ -1607,8 +1609,9 @@ async function handlePhotoUpload(event) {
 }
 
 function prefillManualFromOCR(result) {
-  // Store OCR receipt total for comparison in Review screen
+  // Store OCR receipt total and discounts for use when bill is created
   _ocrReceiptTotal = (result.total && result.total > 0) ? result.total : null;
+  _ocrDiscounts = (result.discounts || []).filter(d => d.amount > 0);
 
   // Reset who paid
   whoPaidManual = null;
@@ -1711,8 +1714,10 @@ function goToReview(source) {
     }));
     if (!items.length) { alert('Add at least one item.'); return; }
     if (!whoPaidManual) { alert('Please select who paid.'); return; }
-    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts:[] }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
+    const ocrDiscEntries = _ocrDiscounts.map(d => ({ id: Date.now() + Math.random(), amt: d.amount, label: d.description || 'Discount', assignTo: 'split', fromOcr: true }));
+    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
     _ocrReceiptTotal = null;
+    _ocrDiscounts = [];
   }
 
   // Sync charge toggles from currentBill
@@ -2328,6 +2333,12 @@ function renderSharedDiscounts() {
   const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop' || d.assignTo === 'fixed');
   const el = document.getElementById('rv-shared-discounts');
   if (!el) return;
+  const noticeEl = document.getElementById('rv-ocr-disc-notice');
+  const ocrCount = discs.filter(d => d.fromOcr).length;
+  if (noticeEl) {
+    if (ocrCount > 0) { noticeEl.style.display = ''; noticeEl.textContent = ocrCount + ' discount' + (ocrCount > 1 ? 's' : '') + ' pre-filled from receipt · tap to edit'; }
+    else { noticeEl.style.display = 'none'; }
+  }
   if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 14px 6px;">None</div>'; return; }
   el.innerHTML = discs.map(d => `
     <div style="display:flex;align-items:center;padding:6px 14px;cursor:pointer;border-top:0.5px solid var(--border);" onclick="editDisc('${d.id}','shared')">
