@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.18 (2026-06-16)
+    - UX: Summary page redesign — Week/Month/3months/All time filter tabs; Month tab second-tap opens year-nav month picker dropdown; donut center number smaller; grouped side-by-side bar chart adapts to filter period; "Who paid more" replaced by "Cost breakdown" (share / paid / net per person + settlement sentence)
   v2.1.17 (2026-06-15)
     - Polish: hero card colour adjusted #DC9090 → #E07575
     - Polish: PP avatar colour changed from terracotta #C9715A → cornflower blue #5B8FD4
@@ -534,10 +536,24 @@ const CONFIG = {
   <!-- SUMMARY -->
   <div id="screen-summary" class="screen">
     <div class="page-header"><div class="page-title">Summary</div></div>
-    <div style="display:flex; gap:6px; padding:0 12px 8px;">
-      <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month">This month</div>
-      <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m">3 months</div>
-      <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all">All time</div>
+    <div style="position:relative;">
+      <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
+        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week">Week</div>
+        <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month">Month ▾</div>
+        <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m">3 months</div>
+        <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all">All time</div>
+      </div>
+      <!-- Month picker dropdown -->
+      <div id="sf-month-dd" style="display:none; position:absolute; top:100%; left:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:14px; width:220px; z-index:200; box-shadow:0 4px 20px rgba(0,0,0,.14); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:0.5px solid var(--border);">
+          <div onclick="changeDdYear(-1)" style="width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--text2);">‹</div>
+          <div id="sf-yr-label" style="font-size:13px;font-weight:500;"></div>
+          <div onclick="changeDdYear(1)" id="sf-yr-next" style="width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--text2);">›</div>
+        </div>
+        <div id="sf-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:10px;"></div>
+      </div>
+      <!-- Overlay to close dropdown on outside click -->
+      <div id="sf-month-overlay" onclick="closeSummaryMonthDd()" style="display:none; position:fixed; inset:0; z-index:199;"></div>
     </div>
 
     <!-- Category donut -->
@@ -572,21 +588,30 @@ const CONFIG = {
       </div>
     </div>
 
-    <!-- Who paid more -->
+    <!-- Cost breakdown -->
     <div class="card" style="padding:14px;">
-      <div class="sec-label" style="padding:0 0 10px;">Who paid more</div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <div style="font-size:12px; color:var(--text2); min-width:36px; text-align:right;" id="wpm-a-name">A</div>
-        <div style="flex:1; height:8px; border-radius:4px; overflow:hidden; background:#e8f0ef; position:relative;">
-          <div id="wpm-bar" style="position:absolute; left:0; top:0; bottom:0; width:50%; background:var(--acc); border-radius:4px; transition:width 0.4s;"></div>
+      <div class="sec-label" style="padding:0 0 12px;">Cost breakdown</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">
+        <div style="padding-right:12px;border-right:0.5px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+            <div class="avatar av-a" style="width:22px;height:22px;font-size:9px;" id="cbd-av-a"></div>
+            <span style="font-size:13px;font-weight:600;" id="cbd-name-a"></span>
+          </div>
+          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Their share</div><div style="font-size:12px;font-weight:500;" id="cbd-share-a"></div></div>
+          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Amount paid</div><div style="font-size:12px;font-weight:500;" id="cbd-paid-a"></div></div>
+          <div style="border-top:0.5px solid var(--border);padding-top:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Net</div><div style="font-size:12px;font-weight:600;" id="cbd-net-a"></div></div>
         </div>
-        <div style="font-size:12px; color:var(--text2); min-width:36px;" id="wpm-b-name">B</div>
+        <div style="padding-left:12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+            <div class="avatar av-b" style="width:22px;height:22px;font-size:9px;" id="cbd-av-b"></div>
+            <span style="font-size:13px;font-weight:600;" id="cbd-name-b"></span>
+          </div>
+          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Their share</div><div style="font-size:12px;font-weight:500;" id="cbd-share-b"></div></div>
+          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Amount paid</div><div style="font-size:12px;font-weight:500;" id="cbd-paid-b"></div></div>
+          <div style="border-top:0.5px solid var(--border);padding-top:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Net</div><div style="font-size:12px;font-weight:600;" id="cbd-net-b"></div></div>
+        </div>
       </div>
-      <div style="display:flex; justify-content:space-between; margin-top:6px; padding:0 44px;">
-        <div style="font-size:12px; font-weight:500; color:var(--acc);" id="wpm-a-amt">฿0</div>
-        <div style="font-size:12px; font-weight:500; color:#a0623a;" id="wpm-b-amt">฿0</div>
-      </div>
-      <div style="font-size:11px; color:var(--text3); text-align:center; margin-top:6px;" id="wpm-label"></div>
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary,#f0f5f4);border-radius:8px;font-size:12px;color:var(--text2);text-align:center;" id="cbd-summary"></div>
     </div>
   </div>
 
@@ -1041,6 +1066,8 @@ let charges = { sc: false, vat: false };
 let customSplitItemIdx = -1;
 let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
+let summarySelectedMonth = new Date().toISOString().slice(0,7);
+let summaryMonthDdYear = new Date().getFullYear();
 let historyFilter = 'all';
 let whoPaidManual = null;
 let editingBillId = null;
@@ -2506,11 +2533,73 @@ async function syncToSheets(bill) {
 
 // ── SUMMARY ───────────────────────────────────────────
 function filterSummary(f) {
+  const dd = document.getElementById('sf-month-dd');
+  const overlay = document.getElementById('sf-month-overlay');
+  if (f === 'month') {
+    if (summaryFilter === 'month') {
+      // second tap → toggle dropdown
+      const isOpen = dd.style.display !== 'none';
+      dd.style.display = isOpen ? 'none' : 'block';
+      overlay.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) renderMonthDd();
+      return;
+    }
+    summarySelectedMonth = new Date().toISOString().slice(0,7);
+    summaryMonthDdYear = new Date().getFullYear();
+  } else {
+    dd.style.display = 'none';
+    overlay.style.display = 'none';
+  }
   summaryFilter = f;
-  ['month','3m','all'].forEach(k => {
+  ['week','month','3m','all'].forEach(k => {
     document.getElementById('sf-'+k).className = 'chip ' + (k===f ? 'chip-a' : 'chip-shared');
   });
+  const monEl = document.getElementById('sf-month');
+  if (f === 'month') {
+    const d = new Date(summarySelectedMonth + '-02');
+    monEl.textContent = d.toLocaleDateString('en-GB',{month:'short', year:'numeric'}) + ' ▾';
+  } else {
+    monEl.textContent = 'Month ▾';
+  }
   renderSummary();
+}
+
+function closeSummaryMonthDd() {
+  document.getElementById('sf-month-dd').style.display = 'none';
+  document.getElementById('sf-month-overlay').style.display = 'none';
+}
+
+function renderMonthDd() {
+  const now = new Date();
+  const yr = summaryMonthDdYear;
+  document.getElementById('sf-yr-label').textContent = yr;
+  const nextEl = document.getElementById('sf-yr-next');
+  const isFutureYr = yr >= now.getFullYear();
+  nextEl.style.opacity = isFutureYr ? '0.3' : '1';
+  nextEl.style.pointerEvents = isFutureYr ? 'none' : 'auto';
+  const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('sf-month-grid').innerHTML = mNames.map((m, i) => {
+    const key = `${yr}-${String(i+1).padStart(2,'0')}`;
+    const isFuture = new Date(yr, i, 1) > now;
+    const isSel = key === summarySelectedMonth;
+    return `<div onclick="${isFuture ? '' : `selectSummaryMonth('${key}')`}" style="padding:7px 4px;text-align:center;border-radius:8px;font-size:12px;cursor:${isFuture?'default':'pointer'};color:${isSel?'white':isFuture?'var(--text3)':'var(--text)'};background:${isSel?'var(--acc)':'transparent'};opacity:${isFuture?0.35:1};">${m}</div>`;
+  }).join('');
+}
+
+function selectSummaryMonth(key) {
+  summarySelectedMonth = key;
+  closeSummaryMonthDd();
+  const d = new Date(key + '-02');
+  document.getElementById('sf-month').textContent = d.toLocaleDateString('en-GB',{month:'short', year:'numeric'}) + ' ▾';
+  renderSummary();
+}
+
+function changeDdYear(dir) {
+  const now = new Date();
+  const newYr = summaryMonthDdYear + dir;
+  if (newYr > now.getFullYear()) return;
+  summaryMonthDdYear = newYr;
+  renderMonthDd();
 }
 
 function setPersonFilter(p) {
@@ -2526,8 +2615,15 @@ function getBillsForFilter() {
   const now = new Date();
   return state.bills.filter(b => {
     if (!b.date) return true;
-    if (summaryFilter === 'month') return b.date.slice(0,7) === now.toISOString().slice(0,7);
-    if (summaryFilter === '3m') { const d = new Date(b.date); const diff = (now - d) / (1000*60*60*24*30); return diff <= 3; }
+    if (summaryFilter === 'week') {
+      const diff = (now - new Date(b.date)) / (1000*60*60*24);
+      return diff <= 7;
+    }
+    if (summaryFilter === 'month') return b.date.slice(0,7) === summarySelectedMonth;
+    if (summaryFilter === '3m') {
+      const diff = (now - new Date(b.date)) / (1000*60*60*24*30);
+      return diff <= 3;
+    }
     return true;
   });
 }
@@ -2558,8 +2654,8 @@ function renderSummary() {
   const r = 38, cx = 55, cy = 55, circ = 2 * Math.PI * r;
 
   donut.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8f0ef" stroke-width="16"/>
-    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
-    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="9" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
+    <text x="${cx}" y="${cy-3}" text-anchor="middle" font-size="9" font-weight="500" fill="#1a1a1a" font-family="-apple-system,sans-serif">${fmt(total)}</text>
+    <text x="${cx}" y="${cy+9}" text-anchor="middle" font-size="9" fill="#aaa" font-family="-apple-system,sans-serif">total</text>`;
 
   let cumLen = 0;
   let legendHTML = '';
@@ -2582,44 +2678,101 @@ function renderSummary() {
   });
   legend.innerHTML = legendHTML || '<div style="font-size:12px;color:var(--text3);">No data</div>';
 
-  // Monthly bar chart
-  const months = [];
+  // Monthly bar chart (grouped side-by-side, adapts to filter)
   const now = new Date();
-  for (let i = 4; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB', { month:'short' }), a:0, b:0 });
+  let barMonths = [];
+  if (summaryFilter === 'week') {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const key = d.toISOString().slice(0,10);
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), a:0, b:0, isDay:true });
+    }
+    state.bills.forEach(b => {
+      const m = barMonths.find(mo => mo.key === b.date?.slice(0,10));
+      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
+    });
+  } else if (summaryFilter === '3m') {
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+    }
+    state.bills.forEach(b => {
+      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
+      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
+    });
+  } else if (summaryFilter === 'all') {
+    const monthKeys = [...new Set(state.bills.map(b => b.date?.slice(0,7)).filter(Boolean))].sort();
+    monthKeys.forEach(key => {
+      const d = new Date(key + '-02');
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+    });
+    state.bills.forEach(b => {
+      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
+      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
+    });
+  } else {
+    // month filter: show 6 months around selected
+    for (let i = 5; i >= 0; i--) {
+      const sel = new Date(summarySelectedMonth + '-02');
+      const d = new Date(sel.getFullYear(), sel.getMonth() - i, 1);
+      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+    }
+    state.bills.forEach(b => {
+      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
+      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
+    });
   }
-  state.bills.forEach(b => {
-    const m = months.find(mo => mo.key === b.date?.slice(0,7));
-    if (m) { m.a += b.shareA || 0; m.b += b.shareB || 0; }
-  });
-  const maxVal = Math.max(...months.flatMap(m => [m.a, m.b]), 1);
-  document.getElementById('bar-chart').innerHTML = months.map(m => {
-    const hA = Math.round((m.a / maxVal) * 70);
-    const hB = Math.round((m.b / maxVal) * 70);
+  const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
+  const chartH = 70;
+  const activeMark = summaryFilter === 'week' ? now.toISOString().slice(0,10) :
+                     summaryFilter === 'month' ? summarySelectedMonth :
+                     now.toISOString().slice(0,7);
+  document.getElementById('bar-chart').innerHTML = barMonths.map(m => {
+    const hA = m.a > 0 ? Math.max(2, Math.round((m.a / maxBarVal) * chartH)) : 0;
+    const hB = m.b > 0 ? Math.max(2, Math.round((m.b / maxBarVal) * chartH)) : 0;
+    const isActive = m.key === activeMark;
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div style="font-size:8px;color:var(--text3);text-align:center;">${m.a+m.b>0?fmt(m.a+m.b):''}</div>
-      <div style="flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;">
-        <div style="background:#a0e0d8;border-radius:3px 3px 0 0;height:${hB}px;"></div>
-        <div style="background:var(--acc);border-radius:3px 3px 0 0;height:${hA}px;"></div>
+      <div style="width:100%;display:flex;align-items:flex-end;justify-content:center;gap:1px;height:${chartH}px;">
+        <div style="width:46%;background:var(--acc);border-radius:2px 2px 0 0;height:${hA}px;"></div>
+        <div style="width:46%;background:#a0e0d8;border-radius:2px 2px 0 0;height:${hB}px;"></div>
       </div>
-      <div style="font-size:8px;color:${m.key===now.toISOString().slice(0,7)?'var(--acc)':'var(--text3)'};">${m.label}</div>
+      <div style="font-size:8px;color:${isActive?'var(--acc)':'var(--text3)'};">${m.label}</div>
     </div>`;
   }).join('');
 
-  // Who paid more
+  // Cost breakdown
   const aPaid = bills.filter(b=>b.paidBy==='a').reduce((s,b)=>s+b.grandTotal,0);
   const bPaid = bills.filter(b=>b.paidBy==='b').reduce((s,b)=>s+b.grandTotal,0);
-  const totalPaid = aPaid + bPaid;
-  const pctA = totalPaid > 0 ? Math.round(aPaid / totalPaid * 100) : 50;
-  document.getElementById('wpm-a-name').textContent = nameA;
-  document.getElementById('wpm-b-name').textContent = nameB;
-  document.getElementById('wpm-a-amt').textContent = fmt(aPaid);
-  document.getElementById('wpm-b-amt').textContent = fmt(bPaid);
-  document.getElementById('wpm-bar').style.width = pctA + '%';
-  const diff = Math.abs(aPaid - bPaid);
-  document.getElementById('wpm-label').textContent = diff < 1 ? 'Balanced' :
-    (aPaid > bPaid ? nameA : nameB) + ' paid ' + fmt(diff) + ' more';
+  const totalShareA = bills.reduce((s,b)=>s+(b.shareA||0),0);
+  const totalShareB = bills.reduce((s,b)=>s+(b.shareB||0),0);
+  const aNet = aPaid - totalShareA; // positive = A overpaid (B owes A)
+  const bNet = bPaid - totalShareB;
+
+  const cbAvA = document.getElementById('cbd-av-a');
+  const cbAvB = document.getElementById('cbd-av-b');
+  if (cbAvA) cbAvA.textContent = nameA[0];
+  if (cbAvB) cbAvB.textContent = nameB[0];
+  const _s = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+  _s('cbd-name-a', nameA); _s('cbd-name-b', nameB);
+  _s('cbd-share-a', fmt(totalShareA)); _s('cbd-share-b', fmt(totalShareB));
+  _s('cbd-paid-a', fmt(aPaid)); _s('cbd-paid-b', fmt(bPaid));
+
+  const netAEl = document.getElementById('cbd-net-a');
+  const netBEl = document.getElementById('cbd-net-b');
+  const fmtNet = (el, val) => {
+    if (!el) return;
+    if (val > 0.01) { el.textContent = '+'+fmt(val); el.style.color='var(--acc)'; }
+    else if (val < -0.01) { el.textContent = fmt(val); el.style.color='#E05454'; }
+    else { el.textContent = '±0'; el.style.color='var(--text3)'; }
+  };
+  fmtNet(netAEl, aNet); fmtNet(netBEl, bNet);
+
+  const cbSum = document.getElementById('cbd-summary');
+  if (cbSum) {
+    if (Math.abs(aNet) < 0.01) cbSum.textContent = 'All settled up ✓';
+    else if (aNet > 0) cbSum.textContent = `${nameB} owes ${nameA} ${fmt(Math.abs(aNet))}`;
+    else cbSum.textContent = `${nameA} owes ${nameB} ${fmt(Math.abs(aNet))}`;
+  }
 }
 
 // ── GEMINI / OCR API ──────────────────────────────────
