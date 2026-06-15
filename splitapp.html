@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.4 (2026-06-15)
+    - Bug #33: "None" voucher label now has correct left padding (was overflowing card edge)
+    - Polish #27b: theme-color meta added to match app background on Android / iOS 15+ Safari
+    - UX #25b: ▾ (custom split) button now hidden when item is already assigned to the active assign-mode person
+    - UX #26b: Items assigned to the other person now show their colour indicator in assign mode; tapping reassigns
+    - UX #28b: "+ discount" and "+ Add voucher" now open a popup sheet instead of adding inline rows
   v2.1.3 (2026-06-15)
     - Feature #24: "Who paid?" no longer defaults to Person A — both buttons start unselected; Next → blocked until one is chosen
     - Feature #23: "Person A" / "Person B" sublabels in Settings hidden once real names are set
@@ -188,6 +194,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="SplitApp">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#F5FAF9">
 <title>SplitApp</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -596,7 +603,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.3</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.4</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -938,6 +945,30 @@ const CONFIG = {
     </div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:12px;" id="csp-preview">—</div>
     <button class="btn" onclick="applyCustomSplit()">Apply</button>
+  </div>
+</div>
+
+<!-- Discount entry sheet -->
+<div class="sheet-overlay" id="disc-sheet-overlay" onclick="closeDiscSheet(event)">
+  <div class="sheet" onclick="event.stopPropagation()" style="padding-bottom:calc(20px + var(--safe-b));">
+    <div class="sheet-handle"></div>
+    <div id="disc-sheet-title" style="font-size:16px;font-weight:600;margin-bottom:14px;"></div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Label <span style="color:var(--text3);">(optional)</span></div>
+      <input type="text" id="disc-sheet-label" placeholder="e.g. Voucher, Coupon, Staff discount" style="width:100%;">
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Amount</div>
+      <input type="number" id="disc-sheet-amt" placeholder="0" min="0" style="width:100%;">
+    </div>
+    <div id="disc-sheet-type-row" style="display:none;margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Split</div>
+      <select id="disc-sheet-split-type" style="width:100%;">
+        <option value="split">50/50</option>
+        <option value="prop">Proportional</option>
+      </select>
+    </div>
+    <button class="btn" onclick="saveDiscSheet()">Add</button>
   </div>
 </div>
 
@@ -1746,21 +1777,27 @@ function renderReviewItems() {
 
     if (assignMode) {
       const checked = it.assignment === assignMode;
+      const otherMode = assignMode === 'a' ? 'b' : assignMode === 'b' ? 'a' : null;
+      const otherAssigned = !!otherMode && it.assignment === otherMode;
       const checkColor = assignMode === 'a' ? 'var(--acc)' : assignMode === 'b' ? '#a0623a' : '#666';
+      const otherColor = otherMode === 'a' ? 'var(--acc)' : '#a0623a';
+      const circleColor = checked ? checkColor : otherAssigned ? otherColor : 'transparent';
+      const circleBorder = checked ? checkColor : otherAssigned ? otherColor : 'var(--border)';
+      const showCheck = checked || otherAssigned;
       return `<div class="card-row" style="gap:8px;cursor:pointer;" onclick="toggleItemAssign(${i},event)">
-        <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${checked ? checkColor : 'var(--border)'};background:${checked ? checkColor : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-          ${checked ? '<svg width="12" height="12" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
+        <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${circleBorder};background:${circleColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          ${showCheck ? '<svg width="12" height="12" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
         </div>
         <div style="flex:1;min-width:0;">
           <div class="text-strong">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
           <div class="text-sub">${fmt(it.price * it.qty)}</div>
         </div>
-        <div class="assign-dd-wrap">
+        ${!checked ? `<div class="assign-dd-wrap">
           <div class="assign-chip ${chipClass}" style="padding-left:0;">
             <div class="chip-dd-btn" onclick="setAssignDirect(${i},'custom');event.stopPropagation();" style="padding:4px 8px;">▾</div>
           </div>
           ${assignDropdownHTML(i, it, nameA, nameB, true)}
-        </div>
+        </div>` : ''}
       </div>`;
     }
 
@@ -2102,18 +2139,49 @@ function renderPersonBoxes() {
     </div>`;
 }
 
+// ── DISCOUNT SHEET ────────────────────────────────────
+let _discSheetContext = null; // 'a', 'b', or 'shared'
+
 function addPersonDiscount(who) {
-  if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
-  currentBill.charges.discounts.push({ id: Date.now().toString(), amt: 0, label: '', assignTo: who });
-  renderPersonBoxes();
-  recalc();
+  openDiscSheet(who);
 }
 
 function addSharedDiscount() {
+  openDiscSheet('shared');
+}
+
+function openDiscSheet(context) {
+  _discSheetContext = context;
+  const isShared = context === 'shared';
+  document.getElementById('disc-sheet-title').textContent = isShared ? 'Add voucher' : 'Add personal discount';
+  document.getElementById('disc-sheet-label').value = '';
+  document.getElementById('disc-sheet-amt').value = '';
+  document.getElementById('disc-sheet-type-row').style.display = isShared ? '' : 'none';
+  if (document.getElementById('disc-sheet-split-type')) document.getElementById('disc-sheet-split-type').value = 'split';
+  document.getElementById('disc-sheet-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('disc-sheet-label').focus(), 150);
+}
+
+function closeDiscSheet(e) {
+  if (e && e.target !== document.getElementById('disc-sheet-overlay')) return;
+  document.getElementById('disc-sheet-overlay').classList.remove('open');
+}
+
+function saveDiscSheet() {
+  const label = document.getElementById('disc-sheet-label').value.trim();
+  const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
+  if (!amt) { alert('Enter an amount.'); return; }
   if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
-  currentBill.charges.discounts.push({ id: Date.now().toString(), amt: 0, label: '', assignTo: 'split' });
-  renderSharedDiscounts();
+  if (_discSheetContext === 'shared') {
+    const assignTo = document.getElementById('disc-sheet-split-type').value || 'split';
+    currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Voucher', assignTo });
+    renderSharedDiscounts();
+  } else {
+    currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Discount', assignTo: _discSheetContext });
+    renderPersonBoxes();
+  }
   recalc();
+  document.getElementById('disc-sheet-overlay').classList.remove('open');
 }
 
 function removeDiscount(id) {
@@ -2144,7 +2212,7 @@ function renderSharedDiscounts() {
   const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop' || d.assignTo === 'fixed');
   const el = document.getElementById('rv-shared-discounts');
   if (!el) return;
-  if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 0 6px;">None</div>'; return; }
+  if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 14px 6px;">None</div>'; return; }
   el.innerHTML = discs.map(d => `
     <div style="padding:4px 0;">
       <div style="display:flex;align-items:center;gap:5px;">
