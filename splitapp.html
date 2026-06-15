@@ -2,6 +2,20 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.2 (2026-06-15)
+    - Polish: "Powered by Gemini" badge with sparkle icon on scan overlay (bottom, subtle)
+  v2.1.1 (2026-06-15)
+    - OCR prompt: merchant name now prefers English; falls back to local script; returns empty string if cannot determine
+    - Place field: shows "OCR filled · tap to verify" (grey) when OCR fills merchant name
+    - Place field: shows orange border + "⚠ Merchant not detected — enter manually" when OCR returns empty merchant
+    - Note clears automatically when user types in the field or after saving a bill
+  v2.1.0 (2026-06-15)
+    - Refactor: Removed dead code (doPost/doGet Apps Script stubs — never ran in browser)
+    - Refactor: discRows() extracted from nested closure inside renderPersonBoxes() to top-level
+    - Refactor: assignDropdownHTML() helper extracted — eliminates duplicated dropdown HTML in renderReviewItems()
+    - Refactor: fmtDate() moved to UTILITIES section alongside fmt()/fmtSigned()
+    - Refactor: Section headers standardized — CURRENCY SHEET + SHEET SYSTEM → BOTTOM SHEET; Gemini sections merged; SYNC FROM SHEETS header removed (part of GOOGLE SHEETS SYNC)
+    - Refactor: CSS utility classes .text-sub, .text-strong, .stat-lbl, .stat-val replacing repeated inline styles
   v2.0.3 (2026-06-15)
     - Fix: Items card overflow:visible so dropdown is no longer clipped by card boundary
     - Fix: Non-assign mode dropdown also hides Shared option when item is already Shared
@@ -336,6 +350,12 @@ textarea { resize: none; }
 .amt-grn { color: var(--grn); font-weight: 500; }
 .amt-red { color: var(--red); font-weight: 500; }
 
+/* Utility */
+.text-sub { font-size: 11px; color: var(--text3); }
+.text-strong { font-size: 13px; font-weight: 500; }
+.stat-lbl { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+.stat-val { font-size: 18px; font-weight: 600; }
+
 /* Chart */
 .donut-wrap { display: flex; align-items: center; gap: 14px; }
 .bar-group { display: flex; align-items: flex-end; gap: 4px; }
@@ -424,12 +444,12 @@ const CONFIG = {
     <!-- Stat tiles -->
     <div style="display:flex; gap:8px; margin:0 12px 10px;">
       <div style="flex:1; background:var(--card); border-radius:12px; padding:10px 12px; border:0.5px solid var(--border);">
-        <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">Bills this month</div>
-        <div style="font-size:18px; font-weight:600;" id="stat-bills">0</div>
+        <div class="stat-lbl">Bills this month</div>
+        <div class="stat-val" id="stat-bills">0</div>
       </div>
       <div style="flex:1; background:var(--card); border-radius:12px; padding:10px 12px; border:0.5px solid var(--border);">
-        <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">Total spent</div>
-        <div style="font-size:18px; font-weight:600;" id="stat-total">฿0</div>
+        <div class="stat-lbl">Total spent</div>
+        <div class="stat-val" id="stat-total">฿0</div>
       </div>
     </div>
 
@@ -573,7 +593,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.3</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.2</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -625,7 +645,8 @@ const CONFIG = {
       <div style="padding:0 12px 8px;"><input type="date" id="bill-date" style="width:100%;"></div>
 
       <div class="sec-label">Place / description</div>
-      <div style="padding:0 12px 8px;"><input type="text" id="bill-place" placeholder="e.g. Somtum Der, Big C…"></div>
+      <div style="padding:0 12px 4px;"><input type="text" id="bill-place" placeholder="e.g. Somtum Der, Big C…" oninput="clearPlaceOcrNote()"></div>
+      <div id="place-ocr-note" style="display:none;font-size:11px;padding:0 14px 8px;"></div>
 
       <div class="sec-label">Category <span style="font-weight:400;color:var(--text3);">(optional)</span></div>
       <div style="padding:0 12px 8px;">
@@ -829,6 +850,13 @@ const CONFIG = {
   <div style="font-size:15px; font-weight:500;">Reading receipt…</div>
   <div class="scan-step" id="scan-step">Uploading photo…</div>
   <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; padding:0 32px;">Please keep this page open</div>
+  <div style="position:absolute; bottom:calc(32px + env(safe-area-inset-bottom,0px)); display:flex; align-items:center; gap:6px; opacity:0.55;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="gem-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#3B82F6"/></linearGradient></defs>
+      <path d="M12 2C12 2 14.5 7 19.5 8C19.5 8 14.5 9 12 22C12 22 9.5 9 4.5 8C4.5 8 9.5 7 12 2Z" fill="url(#gem-grad)"/>
+    </svg>
+    <span style="font-size:11px; color:var(--text2); letter-spacing:0.02em;">Powered by Gemini</span>
+  </div>
 </div>
 
 <!-- Custom split sheet -->
@@ -997,9 +1025,21 @@ function goTo(screen) {
   if (screen === 'settings') updateSettingsUI();
 }
 
-// ── CURRENCY SYMBOL ──────────────────────────────────
+// ── UTILITIES ─────────────────────────────────────────
 function fmt(n) { return CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtDate(d) {
+  if (!d) return '—';
+  const s = String(d).trim();
+  let dt;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    dt = new Date(s + 'T00:00:00'); // plain YYYY-MM-DD — append time to avoid UTC shift
+  } else {
+    dt = new Date(s); // ISO with time, locale string, etc.
+  }
+  if (isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+}
 
 // ── HOME / DASHBOARD ─────────────────────────────────
 function renderHome() {
@@ -1075,8 +1115,8 @@ function billRowHTML(b) {
     <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
       <div class="cat-icon ${catClass}">${catEmoji}</div>
       <div style="min-width:0;">
-        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.place || 'Unknown'}</div>
-        <div style="font-size:11px;color:var(--text3);">${fmtDate(b.date)} · ${paidBy} paid · ${fmt(b.grandTotal)} total</div>
+        <div class="text-strong" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.place || 'Unknown'}</div>
+        <div class="text-sub">${fmtDate(b.date)} · ${paidBy} paid · ${fmt(b.grandTotal)} total</div>
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
@@ -1106,19 +1146,6 @@ function editBill(id) {
   // Switch to manual entry tab and navigate
   goTo('newbill');
   switchBillTab('manual');
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  const s = String(d).trim();
-  let dt;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    dt = new Date(s + 'T00:00:00'); // plain YYYY-MM-DD — append time to avoid UTC shift
-  } else {
-    dt = new Date(s); // ISO with time, locale string, etc.
-  }
-  if (isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
 }
 
 function showBillDetail(id) {
@@ -1325,7 +1352,7 @@ function openGSheet() {
   else alert('No Google Sheet URL configured.');
 }
 
-// ── CURRENCY SHEET ────────────────────────────────────
+// ── BOTTOM SHEET ─────────────────────────────────────
 const currencies = [
   { code:'THB', sym:'฿', label:'Thai Baht' },
   { code:'USD', sym:'$', label:'US Dollar' },
@@ -1335,7 +1362,6 @@ const currencies = [
   { code:'GBP', sym:'£', label:'British Pound' },
 ];
 
-// ── SHEET SYSTEM ─────────────────────────────────────
 function openSheet(type, title, body) {
   document.getElementById('sheet-title').textContent = title || '';
   document.getElementById('sheet-body').innerHTML = body || '';
@@ -1370,6 +1396,13 @@ function switchBillTab(tab) {
   document.getElementById('tab-manual').className = 'pill-tab' + (tab==='manual' ? ' active' : '');
   document.getElementById('panel-upload').style.display = tab==='upload' ? 'block' : 'none';
   document.getElementById('panel-manual').style.display = tab==='manual' ? 'block' : 'none';
+}
+
+function clearPlaceOcrNote() {
+  const placeEl = document.getElementById('bill-place');
+  const note = document.getElementById('place-ocr-note');
+  if (placeEl) placeEl.style.borderColor = '';
+  if (note) note.style.display = 'none';
 }
 
 function updateWhoPayNames() {
@@ -1513,7 +1546,18 @@ function prefillManualFromOCR(result) {
   const placeEl = document.getElementById('bill-place');
   const catEl = document.getElementById('bill-category');
   if (dateEl && result.date) dateEl.value = result.date;
-  if (placeEl && result.merchant) placeEl.value = result.merchant;
+  if (placeEl) {
+    const note = document.getElementById('place-ocr-note');
+    if (result.merchant) {
+      placeEl.value = result.merchant;
+      placeEl.style.borderColor = '';
+      if (note) { note.style.display = 'block'; note.style.color = 'var(--text3)'; note.textContent = 'OCR filled · tap to verify'; }
+    } else {
+      placeEl.value = '';
+      placeEl.style.borderColor = '#e08700';
+      if (note) { note.style.display = 'block'; note.style.color = '#e08700'; note.textContent = '⚠ Merchant not detected — enter manually'; }
+    }
+  }
   if (catEl && result.category) catEl.value = result.category;
 
   // Populate items
@@ -1548,7 +1592,7 @@ async function callGeminiOCR(base64, mimeType, model = geminiModel) {
   const prompt = `Read this receipt and return ONLY valid JSON (no markdown) with these fields:
 {
   "date": "YYYY-MM-DD",
-  "merchant": "restaurant or store name",
+  "merchant": "restaurant or store name (English preferred; local script only if no English name exists; empty string if cannot determine)",
   "category": "food|shop|cafe|transport|other",
   "items": [{"name": "item name", "qty": 1, "unit_price": 0}],
   "service_charge_percent": 0,
@@ -1670,6 +1714,15 @@ function toggleItemAssign(i, event) {
   recalc();
 }
 
+function assignDropdownHTML(i, it, nameA, nameB, stopProp) {
+  return `<div class="assign-dropdown" id="assign-dd-${i}"${stopProp ? ' onclick="event.stopPropagation()"' : ''}>
+    <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
+    <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
+    ${it.assignment !== 'shared' ? `<div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>` : ''}
+    <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
+  </div>`;
+}
+
 function renderReviewItems() {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
@@ -1690,19 +1743,14 @@ function renderReviewItems() {
           ${checked ? '<svg width="12" height="12" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
         </div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
-          <div style="font-size:11px;color:var(--text3);">${fmt(it.price * it.qty)}</div>
+          <div class="text-strong">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
+          <div class="text-sub">${fmt(it.price * it.qty)}</div>
         </div>
         <div class="assign-dd-wrap">
           <div class="assign-chip ${chipClass}" style="padding-left:0;">
             <div class="chip-dd-btn" onclick="setAssignDirect(${i},'custom');event.stopPropagation();" style="padding:4px 8px;">▾</div>
           </div>
-          <div class="assign-dropdown" id="assign-dd-${i}" onclick="event.stopPropagation()">
-            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
-            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
-            ${it.assignment !== 'shared' ? `<div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>` : ''}
-            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
-          </div>
+          ${assignDropdownHTML(i, it, nameA, nameB, true)}
         </div>
       </div>`;
     }
@@ -1718,12 +1766,7 @@ function renderReviewItems() {
           <div class="chip-divider"></div>
           <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)">▾</div>
         </div>
-        <div class="assign-dropdown" id="assign-dd-${i}">
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
-          ${it.assignment !== 'shared' ? `<div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>` : ''}
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
-        </div>
+        ${assignDropdownHTML(i, it, nameA, nameB, false)}
       </div>
     </div>`;
   }).join('');
@@ -2000,6 +2043,16 @@ function matchReceiptTotal() {
 }
 
 // ── PERSON BOXES ──────────────────────────────────────
+function discRows(discs) {
+  return discs.map(d => `
+    <div style="display:flex;align-items:center;gap:4px;margin-top:5px;">
+      <input type="number" value="${d.amt||''}" placeholder="0" min="0"
+        style="flex:1;min-width:0;font-size:13px;padding:5px 7px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
+        oninput="updateDiscount('${d.id}','amt',this.value)">
+      <span style="font-size:13px;color:rgba(0,0,0,0.3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+    </div>`).join('');
+}
+
 function renderPersonBoxes() {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
@@ -2020,16 +2073,6 @@ function renderPersonBoxes() {
   const discB = discounts.filter(d => d.assignTo === 'b');
   const sumDiscA = discA.reduce((s,d) => s + (d.amt||0), 0);
   const sumDiscB = discB.reduce((s,d) => s + (d.amt||0), 0);
-
-  function discRows(discs) {
-    return discs.map(d => `
-      <div style="display:flex;align-items:center;gap:4px;margin-top:5px;">
-        <input type="number" value="${d.amt||''}" placeholder="0" min="0"
-          style="flex:1;min-width:0;font-size:13px;padding:5px 7px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
-          oninput="updateDiscount('${d.id}','amt',this.value)">
-        <span style="font-size:13px;color:rgba(0,0,0,0.3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
-      </div>`).join('');
-  }
 
   document.getElementById('rv-person-boxes').innerHTML = `
     <div style="display:flex;gap:10px;">
@@ -2230,6 +2273,7 @@ async function saveBill() {
   document.getElementById('bill-place').value = '';
   document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('bill-category').value = '';
+  clearPlaceOcrNote();
 
   goTo('home');
 }
@@ -2376,7 +2420,7 @@ function renderSummary() {
     (aPaid > bPaid ? nameA : nameB) + ' paid ' + fmt(diff) + ' more';
 }
 
-// ── DYNAMIC GEMINI MODEL SELECTION ───────────────────
+// ── GEMINI / OCR API ──────────────────────────────────
 let geminiModel = 'gemini-2.5-flash'; // default fallback
 
 async function fetchBestGeminiModel() {
@@ -2429,7 +2473,6 @@ async function fetchBestGeminiModel() {
   }
 }
 
-// ── FETCH GEMINI KEY FROM CONFIG TAB ─────────────────
 async function callSetConfig(key, value) {
   if (!CONFIG.googleSheetUrl) return;
   try {
@@ -2476,7 +2519,6 @@ async function forceRefresh() {
   location.reload();
 }
 
-// ── SYNC FROM SHEETS ON LOAD ──────────────────────────
 async function syncFromSheets() {
   if (!CONFIG.googleSheetUrl) return;
   try {
@@ -2636,38 +2678,6 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-<!-- ════════════════════════════════════════════════════
-     GOOGLE APPS SCRIPT — deploy this as a Web App
-     Instructions: script.google.com → New project → paste → Deploy → Web App
-════════════════════════════════════════════════════
-<APPS_SCRIPT>
-function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  if (data.action === 'addBill') {
-    const b = data.bill;
-    let sheet = ss.getSheetByName('Bills') || ss.insertSheet('Bills');
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['ID','Date','Place','Category','Paid By','Grand Total','Share A','Share B','Running Balance','Saved At']);
-    }
-    sheet.appendRow([b.id, b.date, b.place, b.category, b.paidBy, b.grandTotal, b.shareA, b.shareB, b.runningBalance, new Date().toISOString()]);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doGet(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Bills');
-  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ bills: [] })).setMimeType(ContentService.MimeType.JSON);
-  const rows = sheet.getDataRange().getValues();
-  const [header, ...data] = rows;
-  const bills = data.map(r => Object.fromEntries(header.map((h,i) => [h, r[i]])));
-  return ContentService.createTextOutput(JSON.stringify({ bills })).setMimeType(ContentService.MimeType.JSON);
-}
-</APPS_SCRIPT>
--->
 
 </body>
 </html>
