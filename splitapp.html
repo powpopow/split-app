@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.20 (2026-06-16)
+    - Feature: Interactive bar chart — tap column to highlight it and show month + per-person values in detail row above chart; tap again to deselect; non-selected bars dim to 45% opacity
   v2.1.19 (2026-06-16)
     - Polish: Summary filter chips full-width equal pills; month dropdown wider (right:12px); cost breakdown larger fonts (15px name, 14px values, 15px net); month grid cells bigger; year picker clamped to earliest bill year
   v2.1.18 (2026-06-16)
@@ -576,8 +578,11 @@ const CONFIG = {
 
     <!-- Monthly bar chart -->
     <div class="card" style="padding:14px;">
-      <div class="sec-label" style="padding:0 0 10px;">Monthly spending</div>
-      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:6px; height:90px;"></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; padding:0 0 6px;">
+        <div class="sec-label" style="padding:0;">Monthly spending</div>
+        <div id="bar-detail" style="font-size:12px; color:var(--text3);"></div>
+      </div>
+      <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:90px;"></div>
       <div style="display:flex; gap:14px; margin-top:8px; justify-content:center;">
         <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text2);">
           <div style="width:8px;height:8px;border-radius:2px;background:var(--acc);"></div>
@@ -1070,6 +1075,8 @@ let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
 let summarySelectedMonth = new Date().toISOString().slice(0,7);
 let summaryMonthDdYear = new Date().getFullYear();
+let summaryBarIdx = -1;
+let _summaryBarData = [];
 let historyFilter = 'all';
 let whoPaidManual = null;
 let editingBillId = null;
@@ -2618,6 +2625,49 @@ function changeDdYear(dir) {
   renderMonthDd();
 }
 
+function renderBarChart() {
+  const nameA = CONFIG.personA || 'Person A';
+  const nameB = CONFIG.personB || 'Person B';
+  const barMonths = _summaryBarData;
+  const now = new Date();
+  const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
+  const chartH = 70;
+  const activeMark = summaryFilter === 'week' ? now.toISOString().slice(0,10) :
+                     summaryFilter === 'month' ? summarySelectedMonth :
+                     now.toISOString().slice(0,7);
+  document.getElementById('bar-chart').innerHTML = barMonths.map((m, i) => {
+    const hA = m.a > 0 ? Math.max(2, Math.round((m.a / maxBarVal) * chartH)) : 0;
+    const hB = m.b > 0 ? Math.max(2, Math.round((m.b / maxBarVal) * chartH)) : 0;
+    const isActive = m.key === activeMark;
+    const isSel = i === summaryBarIdx;
+    return `<div onclick="selectBarIdx(${i})" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;border-radius:6px;padding:2px 1px;background:${isSel?'rgba(99,163,155,.10)':'transparent'};">
+      <div style="width:100%;display:flex;align-items:flex-end;justify-content:center;gap:1px;height:${chartH}px;">
+        <div style="width:46%;background:var(--acc);border-radius:2px 2px 0 0;height:${hA}px;opacity:${isSel||summaryBarIdx===-1?1:0.45};transition:opacity .15s;"></div>
+        <div style="width:46%;background:#a0e0d8;border-radius:2px 2px 0 0;height:${hB}px;opacity:${isSel||summaryBarIdx===-1?1:0.45};transition:opacity .15s;"></div>
+      </div>
+      <div style="font-size:8px;font-weight:${isSel?'600':'400'};color:${isSel?'var(--acc)':isActive?'var(--acc)':'var(--text3)'};">${m.label}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectBarIdx(i) {
+  const nameA = CONFIG.personA || 'Person A';
+  const nameB = CONFIG.personB || 'Person B';
+  summaryBarIdx = (summaryBarIdx === i) ? -1 : i; // tap same bar to deselect
+  const detail = document.getElementById('bar-detail');
+  if (summaryBarIdx === -1) {
+    detail.innerHTML = '';
+  } else {
+    const m = _summaryBarData[summaryBarIdx];
+    if (m && detail) {
+      detail.innerHTML = `<span style="font-weight:600;color:var(--text);">${m.longLabel}</span>&ensp;`
+        + `<span style="color:var(--acc);">▌${fmt(m.a)}</span>&ensp;`
+        + `<span style="color:#63B8AF;">▌${fmt(m.b)}</span>`;
+    }
+  }
+  renderBarChart();
+}
+
 function setPersonFilter(p) {
   summaryPersonFilter = p;
   ['both','a','b'].forEach(k => {
@@ -2701,7 +2751,7 @@ function renderSummary() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
       const key = d.toISOString().slice(0,10);
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), a:0, b:0, isDay:true });
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), longLabel: d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}), a:0, b:0, isDay:true });
     }
     state.bills.forEach(b => {
       const m = barMonths.find(mo => mo.key === b.date?.slice(0,10));
@@ -2710,7 +2760,7 @@ function renderSummary() {
   } else if (summaryFilter === '3m') {
     for (let i = 2; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
     }
     state.bills.forEach(b => {
       const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
@@ -2720,7 +2770,7 @@ function renderSummary() {
     const monthKeys = [...new Set(state.bills.map(b => b.date?.slice(0,7)).filter(Boolean))].sort();
     monthKeys.forEach(key => {
       const d = new Date(key + '-02');
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
     });
     state.bills.forEach(b => {
       const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
@@ -2731,30 +2781,17 @@ function renderSummary() {
     for (let i = 5; i >= 0; i--) {
       const sel = new Date(summarySelectedMonth + '-02');
       const d = new Date(sel.getFullYear(), sel.getMonth() - i, 1);
-      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), a:0, b:0 });
+      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
     }
     state.bills.forEach(b => {
       const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
       if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
     });
   }
-  const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
-  const chartH = 70;
-  const activeMark = summaryFilter === 'week' ? now.toISOString().slice(0,10) :
-                     summaryFilter === 'month' ? summarySelectedMonth :
-                     now.toISOString().slice(0,7);
-  document.getElementById('bar-chart').innerHTML = barMonths.map(m => {
-    const hA = m.a > 0 ? Math.max(2, Math.round((m.a / maxBarVal) * chartH)) : 0;
-    const hB = m.b > 0 ? Math.max(2, Math.round((m.b / maxBarVal) * chartH)) : 0;
-    const isActive = m.key === activeMark;
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div style="width:100%;display:flex;align-items:flex-end;justify-content:center;gap:1px;height:${chartH}px;">
-        <div style="width:46%;background:var(--acc);border-radius:2px 2px 0 0;height:${hA}px;"></div>
-        <div style="width:46%;background:#a0e0d8;border-radius:2px 2px 0 0;height:${hB}px;"></div>
-      </div>
-      <div style="font-size:8px;color:${isActive?'var(--acc)':'var(--text3)'};">${m.label}</div>
-    </div>`;
-  }).join('');
+  _summaryBarData = barMonths;
+  summaryBarIdx = -1;
+  document.getElementById('bar-detail').innerHTML = '';
+  renderBarChart();
 
   // Cost breakdown
   const aPaid = bills.filter(b=>b.paidBy==='a').reduce((s,b)=>s+b.grandTotal,0);
