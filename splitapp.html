@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v1.9.8 (2026-06-15)
+    - Review screen: replace chip left-tap cycle with top assign bar [NameA][NameB][Shared]. Tap a mode, then tap items to assign via checkbox. Uncheck reverts to Shared. ▾ dropdown unchanged.
+  v1.9.7 (2026-06-15)
+    - Manual entry form: [Name][Qty][Total] layout. User enters line total; unit price back-calculated on save (total/qty). Edit bill and OCR both show line total in form.
   v1.9.6 (2026-06-14)
     - Feature: OCR now extracts item quantity from receipt. Qty field added to manual entry form (between name and price). Edit bill also preserves qty.
   v1.9.5 (2026-06-14)
@@ -549,7 +553,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.6</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.8</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -658,6 +662,7 @@ const CONFIG = {
     </div>
 
     <div class="sec-label">Items</div>
+    <div id="rv-assign-bar" style="display:flex;gap:8px;margin:0 14px 8px;"></div>
     <div class="card" style="margin-top:0;">
       <div id="review-items"></div>
     </div>
@@ -1069,7 +1074,7 @@ function editBill(id) {
 
   // Pre-fill items
   manualItems = (b.items && b.items.length)
-    ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(it.price || '') }))
+    ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(((it.price || 0) * (it.qty || 1)).toFixed(2)) }))
     : [{ name: '', qty: 1, price: '' }];
   renderManualItems();
 
@@ -1367,7 +1372,7 @@ function renderManualItems() {
     `<div class="card-row" style="gap:8px;">
       <input type="text" placeholder="Item name" value="${item.name}" style="flex:2;min-width:0;" oninput="manualItems[${i}].name=this.value">
       <input type="number" placeholder="Qty" value="${item.qty||1}" min="1" style="width:46px;flex:none;" oninput="manualItems[${i}].qty=parseInt(this.value)||1">
-      <input type="number" placeholder="Price" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value">
+      <input type="number" placeholder="Total" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value">
       ${manualItems.length>1 ? `<div onclick="removeManualItem(${i})" style="color:var(--red);font-size:18px;cursor:pointer;padding:0 4px;">×</div>` : ''}
     </div>`).join('');
 }
@@ -1490,7 +1495,7 @@ function prefillManualFromOCR(result) {
   manualItems = (result.items || []).map(it => ({
     name: it.name || '',
     qty: parseInt(it.qty) || 1,
-    price: it.unit_price || 0,
+    price: ((it.unit_price || 0) * (parseInt(it.qty) || 1)).toFixed(2),
   }));
   if (manualItems.length === 0) manualItems = [{ name: '', qty: 1, price: '' }];
   renderManualItems();
@@ -1556,7 +1561,7 @@ function goToReview(source) {
     const items = manualItems.filter(it => it.name || it.price).map(it => ({
       name: it.name || 'Item',
       qty: parseInt(it.qty) || 1,
-      price: parseFloat(it.price) || 0,
+      price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
       assignment: 'shared',
       splitA: 50,
       splitB: 50,
@@ -1590,6 +1595,8 @@ function goToReview(source) {
   document.getElementById('rv-a-name').textContent = nameA;
   document.getElementById('rv-b-name').textContent = nameB;
 
+  assignMode = null;
+  renderAssignBar();
   renderReviewItems();
   renderPersonBoxes();
   renderSharedDiscounts();
@@ -1598,6 +1605,41 @@ function goToReview(source) {
 }
 
 // ── REVIEW SCREEN ─────────────────────────────────────
+function renderAssignBar() {
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const bar = document.getElementById('rv-assign-bar');
+  if (!bar) return;
+  const btn = (mode, label, activeColor, activeBg) => {
+    const active = assignMode === mode;
+    return `<div onclick="setAssignMode('${mode}')" style="flex:1;text-align:center;padding:7px 0;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid ${active ? activeColor : 'var(--border)'};background:${active ? activeBg : 'var(--card)'};color:${active ? activeColor : 'var(--text2)'};">${label}</div>`;
+  };
+  bar.innerHTML =
+    btn('a', nameA, 'var(--acc)', 'var(--acc-light)') +
+    btn('b', nameB, '#a0623a', '#FFF0E6') +
+    btn('shared', 'Shared', '#666', '#f0f0f0');
+}
+
+function setAssignMode(mode) {
+  assignMode = assignMode === mode ? null : mode;
+  renderAssignBar();
+  renderReviewItems();
+}
+
+function toggleItemAssign(i) {
+  if (!assignMode) return;
+  const it = currentBill.items[i];
+  if (it.assignment === assignMode) {
+    it.assignment = 'shared'; it.splitA = 50; it.splitB = 50;
+  } else {
+    it.assignment = assignMode;
+    if (assignMode === 'shared') { it.splitA = 50; it.splitB = 50; }
+  }
+  renderReviewItems();
+  renderPersonBoxes();
+  recalc();
+}
+
 function renderReviewItems() {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
@@ -1609,6 +1651,32 @@ function renderReviewItems() {
     else if (it.assignment === 'qty') { chipClass = 'chip-custom'; chipLabel = (it.qtyA||0)+'/'+(it.qtyB||0); }
     else if (it.assignment === 'amt') { chipClass = 'chip-custom'; chipLabel = fmt(it.amtA||0)+'/'+fmt(it.amtB||0); }
     else { chipClass = 'chip-shared'; chipLabel = 'Shared'; }
+
+    if (assignMode) {
+      const checked = it.assignment === assignMode;
+      const checkColor = assignMode === 'a' ? 'var(--acc)' : assignMode === 'b' ? '#a0623a' : '#666';
+      return `<div class="card-row" style="gap:8px;cursor:pointer;" onclick="toggleItemAssign(${i})">
+        <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${checked ? checkColor : 'var(--border)'};background:${checked ? checkColor : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          ${checked ? '<svg width="12" height="12" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
+          <div style="font-size:11px;color:var(--text3);">${fmt(it.price * it.qty)}</div>
+        </div>
+        <div class="assign-dd-wrap">
+          <div class="assign-chip ${chipClass}" style="padding-left:0;">
+            <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)" style="padding:4px 8px;">▾</div>
+          </div>
+          <div class="assign-dropdown" id="assign-dd-${i}">
+            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
+            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
+            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
+            <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
     return `<div class="card-row" style="gap:8px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
@@ -1616,7 +1684,7 @@ function renderReviewItems() {
       </div>
       <div class="assign-dd-wrap">
         <div class="assign-chip ${chipClass}">
-          <div class="chip-cycle" onclick="cycleAssign(${i})">${chipLabel}</div>
+          <div class="chip-cycle" style="cursor:default;">${chipLabel}</div>
           <div class="chip-divider"></div>
           <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event)">▾</div>
         </div>
@@ -1632,7 +1700,6 @@ function renderReviewItems() {
 }
 
 function cycleAssign(i) {
-  // Perspective-aware order: current user's name comes first after Shared
   const order = currentUser === 'b' ? ['shared', 'b', 'a'] : ['shared', 'a', 'b'];
   const cur = currentBill.items[i].assignment;
   const idx = order.indexOf(cur === 'custom' ? 'shared' : cur);
@@ -1671,6 +1738,7 @@ function setAssignDirect(i, val) {
 }
 
 let currentCustomMode = 'pct';
+let assignMode = null; // null | 'a' | 'b' | 'shared'
 
 function openCustomSplit(i) {
   customSplitItemIdx = i;
