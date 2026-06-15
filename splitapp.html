@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.19 (2026-06-16)
+    - Polish: Summary filter chips full-width equal pills; month dropdown wider (right:12px); cost breakdown larger fonts (15px name, 14px values, 15px net); month grid cells bigger; year picker clamped to earliest bill year
   v2.1.18 (2026-06-16)
     - UX: Summary page redesign — Week/Month/3months/All time filter tabs; Month tab second-tap opens year-nav month picker dropdown; donut center number smaller; grouped side-by-side bar chart adapts to filter period; "Who paid more" replaced by "Cost breakdown" (share / paid / net per person + settlement sentence)
   v2.1.17 (2026-06-15)
@@ -537,20 +539,20 @@ const CONFIG = {
   <div id="screen-summary" class="screen">
     <div class="page-header"><div class="page-title">Summary</div></div>
     <div style="position:relative;">
-      <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
-        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week">Week</div>
-        <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month">Month ▾</div>
-        <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m">3 months</div>
-        <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all">All time</div>
+      <div style="display:flex; gap:6px; padding:0 12px 8px;">
+        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week" style="flex:1;text-align:center;">Week</div>
+        <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month" style="flex:1;text-align:center;">Month ▾</div>
+        <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m" style="flex:1;text-align:center;">3 months</div>
+        <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all" style="flex:1;text-align:center;">All time</div>
       </div>
       <!-- Month picker dropdown -->
-      <div id="sf-month-dd" style="display:none; position:absolute; top:100%; left:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:14px; width:220px; z-index:200; box-shadow:0 4px 20px rgba(0,0,0,.14); overflow:hidden;">
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:0.5px solid var(--border);">
-          <div onclick="changeDdYear(-1)" style="width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--text2);">‹</div>
-          <div id="sf-yr-label" style="font-size:13px;font-weight:500;"></div>
-          <div onclick="changeDdYear(1)" id="sf-yr-next" style="width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--text2);">›</div>
+      <div id="sf-month-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:0.5px solid var(--border);">
+          <div onclick="changeDdYear(-1)" id="sf-yr-prev" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">‹</div>
+          <div id="sf-yr-label" style="font-size:15px;font-weight:600;"></div>
+          <div onclick="changeDdYear(1)" id="sf-yr-next" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
         </div>
-        <div id="sf-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:10px;"></div>
+        <div id="sf-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:12px;"></div>
       </div>
       <!-- Overlay to close dropdown on outside click -->
       <div id="sf-month-overlay" onclick="closeSummaryMonthDd()" style="display:none; position:fixed; inset:0; z-index:199;"></div>
@@ -592,26 +594,26 @@ const CONFIG = {
     <div class="card" style="padding:14px;">
       <div class="sec-label" style="padding:0 0 12px;">Cost breakdown</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">
-        <div style="padding-right:12px;border-right:0.5px solid var(--border);">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-            <div class="avatar av-a" style="width:22px;height:22px;font-size:9px;" id="cbd-av-a"></div>
-            <span style="font-size:13px;font-weight:600;" id="cbd-name-a"></span>
+        <div style="padding-right:14px;border-right:0.5px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <div class="avatar av-a" style="width:30px;height:30px;font-size:12px;" id="cbd-av-a"></div>
+            <span style="font-size:15px;font-weight:600;" id="cbd-name-a"></span>
           </div>
-          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Their share</div><div style="font-size:12px;font-weight:500;" id="cbd-share-a"></div></div>
-          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Amount paid</div><div style="font-size:12px;font-weight:500;" id="cbd-paid-a"></div></div>
-          <div style="border-top:0.5px solid var(--border);padding-top:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Net</div><div style="font-size:12px;font-weight:600;" id="cbd-net-a"></div></div>
+          <div style="margin-bottom:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Their share</div><div style="font-size:14px;font-weight:500;" id="cbd-share-a"></div></div>
+          <div style="margin-bottom:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Amount paid</div><div style="font-size:14px;font-weight:500;" id="cbd-paid-a"></div></div>
+          <div style="border-top:0.5px solid var(--border);padding-top:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Net</div><div style="font-size:15px;font-weight:700;" id="cbd-net-a"></div></div>
         </div>
-        <div style="padding-left:12px;">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-            <div class="avatar av-b" style="width:22px;height:22px;font-size:9px;" id="cbd-av-b"></div>
-            <span style="font-size:13px;font-weight:600;" id="cbd-name-b"></span>
+        <div style="padding-left:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <div class="avatar av-b" style="width:30px;height:30px;font-size:12px;" id="cbd-av-b"></div>
+            <span style="font-size:15px;font-weight:600;" id="cbd-name-b"></span>
           </div>
-          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Their share</div><div style="font-size:12px;font-weight:500;" id="cbd-share-b"></div></div>
-          <div style="margin-bottom:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Amount paid</div><div style="font-size:12px;font-weight:500;" id="cbd-paid-b"></div></div>
-          <div style="border-top:0.5px solid var(--border);padding-top:7px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Net</div><div style="font-size:12px;font-weight:600;" id="cbd-net-b"></div></div>
+          <div style="margin-bottom:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Their share</div><div style="font-size:14px;font-weight:500;" id="cbd-share-b"></div></div>
+          <div style="margin-bottom:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Amount paid</div><div style="font-size:14px;font-weight:500;" id="cbd-paid-b"></div></div>
+          <div style="border-top:0.5px solid var(--border);padding-top:10px;"><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Net</div><div style="font-size:15px;font-weight:700;" id="cbd-net-b"></div></div>
         </div>
       </div>
-      <div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary,#f0f5f4);border-radius:8px;font-size:12px;color:var(--text2);text-align:center;" id="cbd-summary"></div>
+      <div style="margin-top:12px;padding:10px 12px;background:var(--bg-secondary,#f0f5f4);border-radius:10px;font-size:13px;font-weight:500;color:var(--text2);text-align:center;" id="cbd-summary"></div>
     </div>
   </div>
 
@@ -2569,20 +2571,33 @@ function closeSummaryMonthDd() {
   document.getElementById('sf-month-overlay').style.display = 'none';
 }
 
+function getMinBillYear() {
+  const now = new Date();
+  return state.bills.reduce((min, b) => {
+    if (!b.date) return min;
+    const yr = parseInt(b.date.slice(0,4));
+    return yr < min ? yr : min;
+  }, now.getFullYear());
+}
+
 function renderMonthDd() {
   const now = new Date();
   const yr = summaryMonthDdYear;
+  const minYr = getMinBillYear();
   document.getElementById('sf-yr-label').textContent = yr;
   const nextEl = document.getElementById('sf-yr-next');
+  const prevEl = document.getElementById('sf-yr-prev');
   const isFutureYr = yr >= now.getFullYear();
+  const isMinYr = yr <= minYr;
   nextEl.style.opacity = isFutureYr ? '0.3' : '1';
   nextEl.style.pointerEvents = isFutureYr ? 'none' : 'auto';
+  if (prevEl) { prevEl.style.opacity = isMinYr ? '0.3' : '1'; prevEl.style.pointerEvents = isMinYr ? 'none' : 'auto'; }
   const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   document.getElementById('sf-month-grid').innerHTML = mNames.map((m, i) => {
     const key = `${yr}-${String(i+1).padStart(2,'0')}`;
     const isFuture = new Date(yr, i, 1) > now;
     const isSel = key === summarySelectedMonth;
-    return `<div onclick="${isFuture ? '' : `selectSummaryMonth('${key}')`}" style="padding:7px 4px;text-align:center;border-radius:8px;font-size:12px;cursor:${isFuture?'default':'pointer'};color:${isSel?'white':isFuture?'var(--text3)':'var(--text)'};background:${isSel?'var(--acc)':'transparent'};opacity:${isFuture?0.35:1};">${m}</div>`;
+    return `<div onclick="${isFuture ? '' : `selectSummaryMonth('${key}')`}" style="padding:10px 4px;text-align:center;border-radius:10px;font-size:14px;cursor:${isFuture?'default':'pointer'};color:${isSel?'white':isFuture?'var(--text3)':'var(--text)'};background:${isSel?'var(--acc)':'transparent'};opacity:${isFuture?0.35:1};">${m}</div>`;
   }).join('');
 }
 
@@ -2598,6 +2613,7 @@ function changeDdYear(dir) {
   const now = new Date();
   const newYr = summaryMonthDdYear + dir;
   if (newYr > now.getFullYear()) return;
+  if (newYr < getMinBillYear()) return;
   summaryMonthDdYear = newYr;
   renderMonthDd();
 }
