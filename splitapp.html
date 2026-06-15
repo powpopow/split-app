@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.6 (2026-06-15)
+    - UX #42: Saved discount rows now compact (label + amount + split type) — tap to edit in popup sheet; × still deletes inline; Delete button also in edit sheet
+    - UX #43: Fixed ฿ voucher — entering one person's amount auto-fills the other from total (total − entered)
   v2.1.5 (2026-06-15)
     - Bug #38: Shared mode — tapping already-shared item now correctly opens A/B/Custom dropdown (regression from v2.1.4 fix)
     - UX #39: ▾ dropdown button removed from A/B assign mode entirely; only appears in Shared mode for already-shared items
@@ -608,7 +611,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.5</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.6</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -974,11 +977,11 @@ const CONFIG = {
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="disc-sheet-a-label">A</div>
-          <input type="number" id="disc-sheet-amtA" placeholder="0" min="0" style="width:100%;">
+          <input type="number" id="disc-sheet-amtA" placeholder="0" min="0" style="width:100%;" oninput="syncDiscFixed('a')">
         </div>
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="disc-sheet-b-label">B</div>
-          <input type="number" id="disc-sheet-amtB" placeholder="0" min="0" style="width:100%;">
+          <input type="number" id="disc-sheet-amtB" placeholder="0" min="0" style="width:100%;" oninput="syncDiscFixed('b')">
         </div>
       </div>
     </div>
@@ -986,7 +989,8 @@ const CONFIG = {
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Label <span style="color:var(--text3);">(optional)</span></div>
       <input type="text" id="disc-sheet-label" placeholder="e.g. Voucher, Coupon, Staff discount" style="width:100%;">
     </div>
-    <button class="btn" onclick="saveDiscSheet()">Add</button>
+    <button class="btn" id="disc-sheet-save-btn" onclick="saveDiscSheet()">Add</button>
+    <button class="btn danger" id="disc-sheet-delete-btn" onclick="deleteFromDiscSheet()" style="display:none;margin-top:8px;">Delete discount</button>
   </div>
 </div>
 
@@ -2110,13 +2114,14 @@ function matchReceiptTotal() {
 }
 
 // ── PERSON BOXES ──────────────────────────────────────
-function discRows(discs) {
+function discRows(discs, person) {
   return discs.map(d => `
-    <div style="display:flex;align-items:center;gap:4px;margin-top:5px;">
-      <input type="number" value="${d.amt||''}" placeholder="0" min="0"
-        style="flex:1;min-width:0;font-size:13px;padding:5px 7px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
-        oninput="updateDiscount('${d.id}','amt',this.value)">
-      <span style="font-size:13px;color:rgba(0,0,0,0.3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+    <div style="display:flex;align-items:center;gap:4px;margin-top:5px;cursor:pointer;" onclick="editDisc('${d.id}','${person}')">
+      <div style="flex:1;min-width:0;">
+        <span style="font-size:12px;font-weight:500;color:var(--text);">${d.label || 'Discount'}</span>
+        <span style="font-size:11px;color:var(--text3);"> −${fmt(d.amt)}</span>
+      </div>
+      <span style="font-size:18px;color:var(--text3);cursor:pointer;padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
     </div>`).join('');
 }
 
@@ -2146,14 +2151,14 @@ function renderPersonBoxes() {
       <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:600;color:var(--acc);margin-bottom:5px;">${nameA}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsA)}</div>
-        ${discRows(discA)}
+        ${discRows(discA, 'a')}
         <div onclick="addPersonDiscount('a')" style="font-size:11px;color:var(--acc);margin-top:6px;cursor:pointer;">+ discount</div>
         ${sumDiscA > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-sumDiscA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
       </div>
       <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:600;color:#a0623a;margin-bottom:5px;">${nameB}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsB)}</div>
-        ${discRows(discB)}
+        ${discRows(discB, 'b')}
         <div onclick="addPersonDiscount('b')" style="font-size:11px;color:#a0623a;margin-top:6px;cursor:pointer;">+ discount</div>
         ${sumDiscB > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-sumDiscB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
       </div>
@@ -2162,37 +2167,64 @@ function renderPersonBoxes() {
 
 // ── DISCOUNT SHEET ────────────────────────────────────
 let _discSheetContext = null; // 'a', 'b', or 'shared'
+let _discSheetEditId = null;  // id of discount being edited, or null for new
 
-function addPersonDiscount(who) {
-  openDiscSheet(who);
+function addPersonDiscount(who) { openDiscSheet(who); }
+function addSharedDiscount() { openDiscSheet('shared'); }
+function editDisc(id, context) { openDiscSheet(context, id); }
+
+function splitShort(type) {
+  return type === 'split' ? '50/50' : type === 'prop' ? 'Prop' : type === 'fixed' ? 'Fixed' : '50/50';
 }
 
-function addSharedDiscount() {
-  openDiscSheet('shared');
-}
-
-function openDiscSheet(context) {
+function openDiscSheet(context, existingId) {
   _discSheetContext = context;
+  _discSheetEditId = existingId || null;
   const isShared = context === 'shared';
+  const isEdit = !!existingId;
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
-  document.getElementById('disc-sheet-title').textContent = isShared ? 'Add voucher' : 'Add personal discount';
-  document.getElementById('disc-sheet-amt').value = '';
-  document.getElementById('disc-sheet-label').value = '';
+
+  // Pre-fill if editing
+  const d = isEdit ? (currentBill.charges.discounts || []).find(x => x.id === existingId) : null;
+
+  const titlePrefix = isEdit ? 'Edit' : 'Add';
+  document.getElementById('disc-sheet-title').textContent = isShared ? titlePrefix + ' voucher' : titlePrefix + ' personal discount';
+  document.getElementById('disc-sheet-save-btn').textContent = isEdit ? 'Save changes' : 'Add';
+  document.getElementById('disc-sheet-delete-btn').style.display = isEdit ? '' : 'none';
+
+  document.getElementById('disc-sheet-amt').value = d ? (d.assignTo === 'fixed' ? (d.amtA||0) + (d.amtB||0) : d.amt || '') : '';
+  document.getElementById('disc-sheet-label').value = d ? (d.label || '') : '';
   document.getElementById('disc-sheet-type-row').style.display = isShared ? '' : 'none';
-  document.getElementById('disc-sheet-fixed-row').style.display = 'none';
-  document.getElementById('disc-sheet-amtA').value = '';
-  document.getElementById('disc-sheet-amtB').value = '';
+  const splitType = d ? (d.assignTo || 'split') : 'split';
+  if (document.getElementById('disc-sheet-split-type')) document.getElementById('disc-sheet-split-type').value = splitType;
+  const isFixed = splitType === 'fixed';
+  document.getElementById('disc-sheet-fixed-row').style.display = isFixed ? '' : 'none';
+  document.getElementById('disc-sheet-amtA').value = d ? (d.amtA || '') : '';
+  document.getElementById('disc-sheet-amtB').value = d ? (d.amtB || '') : '';
   document.getElementById('disc-sheet-a-label').textContent = nameA;
   document.getElementById('disc-sheet-b-label').textContent = nameB;
-  if (document.getElementById('disc-sheet-split-type')) document.getElementById('disc-sheet-split-type').value = 'split';
   document.getElementById('disc-sheet-overlay').classList.add('open');
   setTimeout(() => document.getElementById('disc-sheet-amt').focus(), 150);
 }
 
 function onDiscSplitTypeChange(val) {
   document.getElementById('disc-sheet-fixed-row').style.display = val === 'fixed' ? '' : 'none';
-  document.getElementById('disc-sheet-amt').closest('div').style.display = val === 'fixed' ? 'none' : '';
+  // Amount field stays visible for all modes — used as total reference for Fixed ฿ auto-fill
+}
+
+function syncDiscFixed(changed) {
+  const total = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
+  if (!total) return;
+  const aEl = document.getElementById('disc-sheet-amtA');
+  const bEl = document.getElementById('disc-sheet-amtB');
+  if (changed === 'a') {
+    const a = parseFloat(aEl.value) || 0;
+    bEl.value = Math.max(0, Math.round((total - a) * 100) / 100) || '';
+  } else {
+    const b = parseFloat(bEl.value) || 0;
+    aEl.value = Math.max(0, Math.round((total - b) * 100) / 100) || '';
+  }
 }
 
 function closeDiscSheet(e) {
@@ -2203,25 +2235,44 @@ function closeDiscSheet(e) {
 function saveDiscSheet() {
   const label = document.getElementById('disc-sheet-label').value.trim();
   if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
+
+  let entry;
   if (_discSheetContext === 'shared') {
     const assignTo = document.getElementById('disc-sheet-split-type').value || 'split';
     if (assignTo === 'fixed') {
       const amtA = parseFloat(document.getElementById('disc-sheet-amtA').value) || 0;
       const amtB = parseFloat(document.getElementById('disc-sheet-amtB').value) || 0;
       if (!amtA && !amtB) { alert('Enter at least one amount.'); return; }
-      currentBill.charges.discounts.push({ id: Date.now().toString(), amt: amtA + amtB, amtA, amtB, label: label || 'Voucher', assignTo: 'fixed' });
+      entry = { amt: amtA + amtB, amtA, amtB, label: label || 'Voucher', assignTo: 'fixed' };
     } else {
       const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
       if (!amt) { alert('Enter an amount.'); return; }
-      currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Voucher', assignTo });
+      entry = { amt, label: label || 'Voucher', assignTo };
     }
-    renderSharedDiscounts();
   } else {
     const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
     if (!amt) { alert('Enter an amount.'); return; }
-    currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Discount', assignTo: _discSheetContext });
-    renderPersonBoxes();
+    entry = { amt, label: label || 'Discount', assignTo: _discSheetContext };
   }
+
+  if (_discSheetEditId) {
+    // Update existing
+    const idx = currentBill.charges.discounts.findIndex(d => d.id === _discSheetEditId);
+    if (idx >= 0) currentBill.charges.discounts[idx] = { ...currentBill.charges.discounts[idx], ...entry };
+  } else {
+    entry.id = Date.now().toString();
+    currentBill.charges.discounts.push(entry);
+  }
+
+  if (_discSheetContext === 'shared') renderSharedDiscounts(); else renderPersonBoxes();
+  recalc();
+  document.getElementById('disc-sheet-overlay').classList.remove('open');
+}
+
+function deleteFromDiscSheet() {
+  if (!_discSheetEditId) return;
+  currentBill.charges.discounts = (currentBill.charges.discounts || []).filter(d => d.id !== _discSheetEditId);
+  if (_discSheetContext === 'shared') renderSharedDiscounts(); else renderPersonBoxes();
   recalc();
   document.getElementById('disc-sheet-overlay').classList.remove('open');
 }
@@ -2249,39 +2300,17 @@ function updateDiscountType(id, type) {
 }
 
 function renderSharedDiscounts() {
-  const nameA = CONFIG.personA || 'A';
-  const nameB = CONFIG.personB || 'B';
   const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop' || d.assignTo === 'fixed');
   const el = document.getElementById('rv-shared-discounts');
   if (!el) return;
   if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 14px 6px;">None</div>'; return; }
   el.innerHTML = discs.map(d => `
-    <div style="padding:4px 0;">
-      <div style="display:flex;align-items:center;gap:5px;">
-        <input type="text" value="${d.label||''}" placeholder="label"
-          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-          oninput="updateDiscount('${d.id}','label',this.value)">
-        ${d.assignTo !== 'fixed' ? `<input type="number" value="${d.amt||''}" placeholder="0" min="0"
-          style="width:62px;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-          oninput="updateDiscount('${d.id}','amt',this.value)">` : ''}
-        <select style="font-size:11px;padding:5px 4px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-          onchange="updateDiscountType('${d.id}',this.value)">
-          <option value="split" ${d.assignTo==='split'?'selected':''}>50/50</option>
-          <option value="prop"  ${d.assignTo==='prop' ?'selected':''}>Proportional</option>
-          <option value="fixed" ${d.assignTo==='fixed'?'selected':''}>Fixed ฿</option>
-        </select>
-        <span style="font-size:14px;color:var(--text3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+    <div style="display:flex;align-items:center;padding:6px 14px;cursor:pointer;border-top:0.5px solid var(--border);" onclick="editDisc('${d.id}','shared')">
+      <div style="flex:1;min-width:0;">
+        <span style="font-size:13px;font-weight:500;">${d.label || 'Voucher'}</span>
+        <span style="font-size:12px;color:var(--text3);margin-left:6px;">−${fmt(d.amt)} · ${splitShort(d.assignTo)}</span>
       </div>
-      ${d.assignTo === 'fixed' ? `<div style="display:flex;align-items:center;gap:5px;margin-top:5px;">
-        <span style="font-size:11px;color:var(--text2);min-width:40px;">${nameA}</span>
-        <input type="number" value="${d.amtA||''}" placeholder="0" min="0"
-          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-          oninput="updateDiscount('${d.id}','amtA',this.value)">
-        <span style="font-size:11px;color:var(--text2);min-width:40px;">${nameB}</span>
-        <input type="number" value="${d.amtB||''}" placeholder="0" min="0"
-          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-          oninput="updateDiscount('${d.id}','amtB',this.value)">
-      </div>` : ''}
+      <span style="font-size:20px;color:var(--text3);padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
     </div>`).join('');
 }
 
