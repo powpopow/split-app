@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.7 (2026-06-15)
+    - Polish #44: "Please keep this page open" text on scan overlay now blinks (opacity pulse animation)
+    - UX #45: Shared mode ▾ replaced with "Custom" chip badge — tapping opens Custom split sheet directly; item circle tap still opens A/B/Custom dropdown
+    - Polish #46: × delete buttons on discount rows now red (var(--red)) on both personal and shared/voucher rows
+    - UX #47+#48: Assign mode item indicators — custom/qty/amt splits show purple circle; shared items show grey circle in A/B mode; A/B assigned items show teal/orange circle in Shared mode
   v2.1.6 (2026-06-15)
     - UX #42: Saved discount rows now compact (label + amount + split type) — tap to edit in popup sheet; × still deletes inline; Delete button also in edit sheet
     - UX #43: Fixed ฿ voucher — entering one person's amount auto-fills the other from total (total − entered)
@@ -349,6 +354,7 @@ textarea { resize: none; }
 .scan-overlay.open { display: flex; }
 .scan-spinner { width: 52px; height: 52px; border: 3px solid var(--acc-light); border-top-color: var(--acc); border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes blink-warn { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
 .scan-step { font-size: 13px; color: var(--text2); }
 
 /* Delete confirm */
@@ -611,7 +617,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.6</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.7</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -867,7 +873,7 @@ const CONFIG = {
   <div class="scan-spinner"></div>
   <div style="font-size:15px; font-weight:500;">Reading receipt…</div>
   <div class="scan-step" id="scan-step">Uploading photo…</div>
-  <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; padding:0 32px;">Please keep this page open</div>
+  <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; padding:0 32px; animation:blink-warn 1s ease-in-out infinite;">Please keep this page open</div>
   <div style="position:absolute; bottom:calc(32px + env(safe-area-inset-bottom,0px)); display:flex; align-items:center; gap:6px; opacity:0.55;">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs><linearGradient id="gem-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#3B82F6"/></linearGradient></defs>
@@ -1800,12 +1806,20 @@ function renderReviewItems() {
     if (assignMode) {
       const checked = it.assignment === assignMode;
       const otherMode = assignMode === 'a' ? 'b' : assignMode === 'b' ? 'a' : null;
-      const otherAssigned = !!otherMode && it.assignment === otherMode;
+      // In Shared mode: show teal/orange for A/B items. In A/B mode: show other person's colour.
+      const otherAssigned = assignMode === 'shared'
+        ? (it.assignment === 'a' || it.assignment === 'b')
+        : (!!otherMode && it.assignment === otherMode);
       const checkColor = assignMode === 'a' ? 'var(--acc)' : assignMode === 'b' ? '#a0623a' : '#666';
-      const otherColor = otherMode === 'a' ? 'var(--acc)' : '#a0623a';
-      const circleColor = checked ? checkColor : otherAssigned ? otherColor : 'transparent';
-      const circleBorder = checked ? checkColor : otherAssigned ? otherColor : 'var(--border)';
-      const showCheck = checked || otherAssigned;
+      const otherColor = assignMode === 'shared'
+        ? (it.assignment === 'a' ? 'var(--acc)' : '#a0623a')
+        : (otherMode === 'a' ? 'var(--acc)' : '#a0623a');
+      // Custom/qty/amt split → purple; shared item in A/B mode → grey
+      const customSplit = ['custom','qty','amt'].includes(it.assignment);
+      const sharedIndicator = assignMode !== 'shared' && it.assignment === 'shared';
+      const circleColor = checked ? checkColor : otherAssigned ? otherColor : customSplit ? '#5340b0' : sharedIndicator ? '#aaa' : 'transparent';
+      const circleBorder = checked ? checkColor : otherAssigned ? otherColor : customSplit ? '#5340b0' : sharedIndicator ? '#aaa' : 'var(--border)';
+      const showCheck = checked || otherAssigned || sharedIndicator;
       // ▾ only in Shared mode for already-shared items (to reassign to A/B/Custom)
       // Never shown in A/B mode — tap is sufficient there
       const showDropdown = assignMode === 'shared' && checked;
@@ -1818,9 +1832,7 @@ function renderReviewItems() {
           <div class="text-sub">${fmt(it.price * it.qty)}</div>
         </div>
         ${showDropdown ? `<div class="assign-dd-wrap">
-          <div class="assign-chip chip-shared" style="padding-left:0;">
-            <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event);" style="padding:4px 8px;">▾</div>
-          </div>
+          <div class="assign-chip chip-custom" style="font-size:11px;padding:3px 10px;cursor:pointer;" onclick="openCustomSplit(${i});event.stopPropagation();">Custom</div>
           ${assignDropdownHTML(i, it, nameA, nameB, true)}
         </div>` : ''}
       </div>`;
@@ -2121,7 +2133,7 @@ function discRows(discs, person) {
         <span style="font-size:12px;font-weight:500;color:var(--text);">${d.label || 'Discount'}</span>
         <span style="font-size:11px;color:var(--text3);"> −${fmt(d.amt)}</span>
       </div>
-      <span style="font-size:18px;color:var(--text3);cursor:pointer;padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
+      <span style="font-size:18px;color:var(--red);cursor:pointer;padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
     </div>`).join('');
 }
 
@@ -2310,7 +2322,7 @@ function renderSharedDiscounts() {
         <span style="font-size:13px;font-weight:500;">${d.label || 'Voucher'}</span>
         <span style="font-size:12px;color:var(--text3);margin-left:6px;">−${fmt(d.amt)} · ${splitShort(d.assignTo)}</span>
       </div>
-      <span style="font-size:20px;color:var(--text3);padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
+      <span style="font-size:20px;color:var(--red);cursor:pointer;padding:2px 4px;line-height:1;" onclick="removeDiscount('${d.id}');event.stopPropagation();">×</span>
     </div>`).join('');
 }
 
