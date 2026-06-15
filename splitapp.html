@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.10 (2026-06-15)
+  v2.1.11 (2026-06-15)
     - UX #49 (real fix): Per-person fixed-amount row now uses visibility:hidden instead of display:none — Add button no longer shifts position when Fixed ฿ is selected, so tapping the inputs can't accidentally trigger Add.
   v2.1.9 (2026-06-15)
     - UX #49: Fixed ฿ discount sheet — add type="button" to Add/Delete buttons so iOS keyboard "Done" no longer triggers them. If both per-person amounts are 0 on save, auto-splits 50/50 instead of alerting.
@@ -623,7 +623,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.10</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.11</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1091,6 +1091,7 @@ function goTo(screen) {
   if (screen === 'history') renderHistory();
   if (screen === 'summary') renderSummary();
   if (screen === 'settings') updateSettingsUI();
+  if (screen === 'newbill') switchBillTab('upload');
 }
 
 // ── UTILITIES ─────────────────────────────────────────
