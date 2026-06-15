@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.21 (2026-06-16)
+    - Feature: All Summary filter tabs now have range navigation — Week: second tap opens ‹ Jun 9–15 › navigation; 3 months: second tap opens ‹ Apr–Jun › 3-month block navigation; Year: "All time" renamed to "Year", second tap opens year grid picker (only years with data shown); chip labels update to show selected range; all filters clamp to earliest bill date/year
   v2.1.20 (2026-06-16)
     - Feature: Interactive bar chart — tap column to highlight it and show month + per-person values in detail row above chart; tap again to deselect; non-selected bars dim to 45% opacity
   v2.1.19 (2026-06-16)
@@ -542,22 +544,48 @@ const CONFIG = {
     <div class="page-header"><div class="page-title">Summary</div></div>
     <div style="position:relative;">
       <div style="display:flex; gap:6px; padding:0 12px 8px;">
-        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week" style="flex:1;text-align:center;">Week</div>
-        <div class="chip chip-a" onclick="filterSummary('month')" id="sf-month" style="flex:1;text-align:center;">Month ▾</div>
-        <div class="chip chip-shared" onclick="filterSummary('3m')" id="sf-3m" style="flex:1;text-align:center;">3 months</div>
-        <div class="chip chip-shared" onclick="filterSummary('all')" id="sf-all" style="flex:1;text-align:center;">All time</div>
+        <div class="chip chip-shared" onclick="filterSummary('week')" id="sf-week" style="flex:1;text-align:center;">Week ▾</div>
+        <div class="chip chip-a"      onclick="filterSummary('month')" id="sf-month" style="flex:1;text-align:center;">Month ▾</div>
+        <div class="chip chip-shared" onclick="filterSummary('3m')"   id="sf-3m"    style="flex:1;text-align:center;">3 mo ▾</div>
+        <div class="chip chip-shared" onclick="filterSummary('all')"  id="sf-all"   style="flex:1;text-align:center;">Year ▾</div>
       </div>
-      <!-- Month picker dropdown -->
+
+      <!-- WEEK dropdown: navigation only -->
+      <div id="sf-week-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px;">
+          <div onclick="stepWeek(-1)" id="sf-week-prev" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">‹</div>
+          <div id="sf-week-range" style="font-size:13px;font-weight:500;"></div>
+          <div onclick="stepWeek(1)"  id="sf-week-next" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
+        </div>
+      </div>
+
+      <!-- MONTH dropdown: year nav + month grid -->
       <div id="sf-month-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
         <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:0.5px solid var(--border);">
           <div onclick="changeDdYear(-1)" id="sf-yr-prev" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">‹</div>
           <div id="sf-yr-label" style="font-size:15px;font-weight:600;"></div>
-          <div onclick="changeDdYear(1)" id="sf-yr-next" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
+          <div onclick="changeDdYear(1)"  id="sf-yr-next" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
         </div>
         <div id="sf-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:12px;"></div>
       </div>
-      <!-- Overlay to close dropdown on outside click -->
-      <div id="sf-month-overlay" onclick="closeSummaryMonthDd()" style="display:none; position:fixed; inset:0; z-index:199;"></div>
+
+      <!-- 3-MONTH dropdown: navigation only -->
+      <div id="sf-3m-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px;">
+          <div onclick="step3m(-1)" id="sf-3m-prev" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">‹</div>
+          <div id="sf-3m-range" style="font-size:13px;font-weight:500;"></div>
+          <div onclick="step3m(1)"  id="sf-3m-next"  style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
+        </div>
+      </div>
+
+      <!-- YEAR dropdown: grid of years with data -->
+      <div id="sf-all-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
+        <div id="sf-year-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:14px;"></div>
+        <div onclick="selectYear(null)" style="padding:0 14px 14px; text-align:center; font-size:13px; color:var(--text3); cursor:pointer;">All years</div>
+      </div>
+
+      <!-- Shared overlay -->
+      <div id="sf-dd-overlay" onclick="closeAllSummaryDd()" style="display:none; position:fixed; inset:0; z-index:199;"></div>
     </div>
 
     <!-- Category donut -->
@@ -1075,6 +1103,9 @@ let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
 let summarySelectedMonth = new Date().toISOString().slice(0,7);
 let summaryMonthDdYear = new Date().getFullYear();
+let summaryWeekAnchor = new Date().toISOString().slice(0,10);
+let summary3mAnchor = new Date().toISOString().slice(0,7);
+let summaryYear = null;
 let summaryBarIdx = -1;
 let _summaryBarData = [];
 let historyFilter = 'all';
@@ -2541,51 +2572,118 @@ async function syncToSheets(bill) {
 }
 
 // ── SUMMARY ───────────────────────────────────────────
-function filterSummary(f) {
-  const dd = document.getElementById('sf-month-dd');
-  const overlay = document.getElementById('sf-month-overlay');
-  if (f === 'month') {
-    if (summaryFilter === 'month') {
-      // second tap → toggle dropdown
-      const isOpen = dd.style.display !== 'none';
-      dd.style.display = isOpen ? 'none' : 'block';
-      overlay.style.display = isOpen ? 'none' : 'block';
-      if (!isOpen) renderMonthDd();
-      return;
-    }
-    summarySelectedMonth = new Date().toISOString().slice(0,7);
-    summaryMonthDdYear = new Date().getFullYear();
-  } else {
-    dd.style.display = 'none';
-    overlay.style.display = 'none';
-  }
-  summaryFilter = f;
-  ['week','month','3m','all'].forEach(k => {
-    document.getElementById('sf-'+k).className = 'chip ' + (k===f ? 'chip-a' : 'chip-shared');
-  });
-  const monEl = document.getElementById('sf-month');
-  if (f === 'month') {
-    const d = new Date(summarySelectedMonth + '-02');
-    monEl.textContent = d.toLocaleDateString('en-GB',{month:'short', year:'numeric'}) + ' ▾';
-  } else {
-    monEl.textContent = 'Month ▾';
-  }
-  renderSummary();
-}
-
-function closeSummaryMonthDd() {
-  document.getElementById('sf-month-dd').style.display = 'none';
-  document.getElementById('sf-month-overlay').style.display = 'none';
-}
+// ── SUMMARY FILTER HELPERS ────────────────────────────
 
 function getMinBillYear() {
-  const now = new Date();
   return state.bills.reduce((min, b) => {
     if (!b.date) return min;
     const yr = parseInt(b.date.slice(0,4));
     return yr < min ? yr : min;
-  }, now.getFullYear());
+  }, new Date().getFullYear());
 }
+
+function getMinBillDate() {
+  return state.bills.reduce((min, b) => {
+    if (!b.date) return min;
+    return b.date < min ? b.date : min;
+  }, new Date().toISOString().slice(0,10));
+}
+
+function weekRangeLabel(anchorStr) {
+  const end = new Date(anchorStr + 'T12:00:00');
+  const start = new Date(end); start.setDate(start.getDate() - 6);
+  const o = {month:'short', day:'numeric'};
+  return start.toLocaleDateString('en-GB', o) + ' – ' + end.toLocaleDateString('en-GB', o);
+}
+
+function range3mLabel(anchorStr) {
+  const end = new Date(anchorStr + '-02');
+  const start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
+  return start.toLocaleDateString('en-GB',{month:'short'}) + ' – ' + end.toLocaleDateString('en-GB',{month:'short', year:'numeric'});
+}
+
+function closeAllSummaryDd() {
+  ['sf-week-dd','sf-month-dd','sf-3m-dd','sf-all-dd'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  const ov = document.getElementById('sf-dd-overlay'); if (ov) ov.style.display = 'none';
+}
+
+function openSummaryDd(id, renderFn) {
+  closeAllSummaryDd();
+  const el = document.getElementById(id); if (!el) return;
+  el.style.display = 'block';
+  document.getElementById('sf-dd-overlay').style.display = 'block';
+  if (renderFn) renderFn();
+}
+
+function updateChipLabels() {
+  const chips = {
+    week:  summaryFilter === 'week'  ? weekRangeLabel(summaryWeekAnchor) + ' ▾' : 'Week ▾',
+    month: summaryFilter === 'month' ? new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short',year:'numeric'}) + ' ▾' : 'Month ▾',
+    '3m':  summaryFilter === '3m'    ? range3mLabel(summary3mAnchor) + ' ▾' : '3 mo ▾',
+    all:   summaryFilter === 'all'   ? (summaryYear ? summaryYear + ' ▾' : 'Year ▾') : 'Year ▾',
+  };
+  Object.entries(chips).forEach(([k, txt]) => {
+    const el = document.getElementById('sf-'+k); if (el) el.textContent = txt;
+  });
+}
+
+function filterSummary(f) {
+  const now = new Date();
+  // Second tap on active filter → toggle its dropdown
+  if (summaryFilter === f) {
+    const ddId = 'sf-' + f + '-dd';
+    const dd = document.getElementById(ddId);
+    if (dd && dd.style.display !== 'none') { closeAllSummaryDd(); return; }
+    if (f === 'week')  { openSummaryDd(ddId, renderWeekDd); return; }
+    if (f === 'month') { openSummaryDd(ddId, renderMonthDd); return; }
+    if (f === '3m')    { openSummaryDd(ddId, render3mDd); return; }
+    if (f === 'all')   { openSummaryDd(ddId, renderYearDd); return; }
+    return;
+  }
+  closeAllSummaryDd();
+  // First tap: activate with sensible defaults
+  if (f === 'week')  { summaryWeekAnchor = now.toISOString().slice(0,10); }
+  if (f === 'month') { summarySelectedMonth = now.toISOString().slice(0,7); summaryMonthDdYear = now.getFullYear(); }
+  if (f === '3m')    { summary3mAnchor = now.toISOString().slice(0,7); }
+  if (f === 'all')   { /* summaryYear stays as-is */ }
+  summaryFilter = f;
+  ['week','month','3m','all'].forEach(k => {
+    document.getElementById('sf-'+k).className = 'chip ' + (k===f ? 'chip-a' : 'chip-shared');
+  });
+  updateChipLabels();
+  renderSummary();
+}
+
+// ── WEEK DROPDOWN ─────────────────────────────────────
+
+function renderWeekDd() {
+  const minDate = getMinBillDate();
+  const now = new Date().toISOString().slice(0,10);
+  const el = document.getElementById('sf-week-range'); if (el) el.textContent = weekRangeLabel(summaryWeekAnchor);
+  const prev = document.getElementById('sf-week-prev');
+  const next = document.getElementById('sf-week-next');
+  // prev disabled if going back would take start before earliest bill
+  const prevAnchor = new Date(summaryWeekAnchor + 'T12:00:00');
+  prevAnchor.setDate(prevAnchor.getDate() - 13); // start of one week back
+  const atMin = prevAnchor.toISOString().slice(0,10) < minDate;
+  if (prev) { prev.style.opacity = atMin ? '0.3' : '1'; prev.style.pointerEvents = atMin ? 'none' : 'auto'; }
+  if (next) { next.style.opacity = summaryWeekAnchor >= now ? '0.3' : '1'; next.style.pointerEvents = summaryWeekAnchor >= now ? 'none' : 'auto'; }
+}
+
+function stepWeek(dir) {
+  const d = new Date(summaryWeekAnchor + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  const now = new Date().toISOString().slice(0,10);
+  if (d.toISOString().slice(0,10) > now) return;
+  summaryWeekAnchor = d.toISOString().slice(0,10);
+  renderWeekDd();
+  updateChipLabels();
+  renderSummary();
+}
+
+// ── MONTH DROPDOWN ────────────────────────────────────
 
 function renderMonthDd() {
   const now = new Date();
@@ -2596,8 +2694,7 @@ function renderMonthDd() {
   const prevEl = document.getElementById('sf-yr-prev');
   const isFutureYr = yr >= now.getFullYear();
   const isMinYr = yr <= minYr;
-  nextEl.style.opacity = isFutureYr ? '0.3' : '1';
-  nextEl.style.pointerEvents = isFutureYr ? 'none' : 'auto';
+  nextEl.style.opacity = isFutureYr ? '0.3' : '1'; nextEl.style.pointerEvents = isFutureYr ? 'none' : 'auto';
   if (prevEl) { prevEl.style.opacity = isMinYr ? '0.3' : '1'; prevEl.style.pointerEvents = isMinYr ? 'none' : 'auto'; }
   const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   document.getElementById('sf-month-grid').innerHTML = mNames.map((m, i) => {
@@ -2610,9 +2707,8 @@ function renderMonthDd() {
 
 function selectSummaryMonth(key) {
   summarySelectedMonth = key;
-  closeSummaryMonthDd();
-  const d = new Date(key + '-02');
-  document.getElementById('sf-month').textContent = d.toLocaleDateString('en-GB',{month:'short', year:'numeric'}) + ' ▾';
+  closeAllSummaryDd();
+  updateChipLabels();
   renderSummary();
 }
 
@@ -2625,6 +2721,54 @@ function changeDdYear(dir) {
   renderMonthDd();
 }
 
+// ── 3-MONTH DROPDOWN ──────────────────────────────────
+
+function render3mDd() {
+  const now = new Date().toISOString().slice(0,7);
+  const minYr = getMinBillYear();
+  const minMonth = `${minYr}-01`;
+  const el = document.getElementById('sf-3m-range'); if (el) el.textContent = range3mLabel(summary3mAnchor);
+  // Compute what the anchor would be 3 months back
+  const anchorDate = new Date(summary3mAnchor + '-02');
+  const prevAnchor = new Date(anchorDate.getFullYear(), anchorDate.getMonth() - 3, 1);
+  const prevKey = prevAnchor.toISOString().slice(0,7);
+  const prev = document.getElementById('sf-3m-prev');
+  const next = document.getElementById('sf-3m-next');
+  if (prev) { const atMin = prevKey < minMonth; prev.style.opacity = atMin ? '0.3' : '1'; prev.style.pointerEvents = atMin ? 'none' : 'auto'; }
+  if (next) { next.style.opacity = summary3mAnchor >= now ? '0.3' : '1'; next.style.pointerEvents = summary3mAnchor >= now ? 'none' : 'auto'; }
+}
+
+function step3m(dir) {
+  const d = new Date(summary3mAnchor + '-02');
+  d.setMonth(d.getMonth() + dir * 3);
+  const now = new Date().toISOString().slice(0,7);
+  if (d.toISOString().slice(0,7) > now) return;
+  summary3mAnchor = d.toISOString().slice(0,7);
+  render3mDd();
+  updateChipLabels();
+  renderSummary();
+}
+
+// ── YEAR DROPDOWN ─────────────────────────────────────
+
+function renderYearDd() {
+  const now = new Date().getFullYear();
+  const minYr = getMinBillYear();
+  const years = [];
+  for (let y = minYr; y <= now; y++) years.push(y);
+  document.getElementById('sf-year-grid').innerHTML = years.map(y => {
+    const isSel = y === summaryYear;
+    return `<div onclick="selectYear(${y})" style="padding:10px 4px;text-align:center;border-radius:10px;font-size:14px;cursor:pointer;color:${isSel?'white':'var(--text)'};background:${isSel?'var(--acc)':'transparent'};">${y}</div>`;
+  }).join('');
+}
+
+function selectYear(yr) {
+  summaryYear = yr;
+  closeAllSummaryDd();
+  updateChipLabels();
+  renderSummary();
+}
+
 function renderBarChart() {
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
@@ -2632,8 +2776,9 @@ function renderBarChart() {
   const now = new Date();
   const maxBarVal = Math.max(...barMonths.flatMap(m => [m.a, m.b]), 1);
   const chartH = 70;
-  const activeMark = summaryFilter === 'week' ? now.toISOString().slice(0,10) :
+  const activeMark = summaryFilter === 'week'  ? summaryWeekAnchor :
                      summaryFilter === 'month' ? summarySelectedMonth :
+                     summaryFilter === '3m'    ? summary3mAnchor :
                      now.toISOString().slice(0,7);
   document.getElementById('bar-chart').innerHTML = barMonths.map((m, i) => {
     const hA = m.a > 0 ? Math.max(2, Math.round((m.a / maxBarVal) * chartH)) : 0;
@@ -2678,20 +2823,27 @@ function setPersonFilter(p) {
 }
 
 function getBillsForFilter() {
-  const now = new Date();
   return state.bills.filter(b => {
     if (!b.date) return true;
     if (summaryFilter === 'week') {
-      const diff = (now - new Date(b.date)) / (1000*60*60*24);
-      return diff <= 7;
+      return b.date >= weekStart(summaryWeekAnchor) && b.date <= summaryWeekAnchor;
     }
     if (summaryFilter === 'month') return b.date.slice(0,7) === summarySelectedMonth;
     if (summaryFilter === '3m') {
-      const diff = (now - new Date(b.date)) / (1000*60*60*24*30);
-      return diff <= 3;
+      const endDate = new Date(summary3mAnchor + '-02');
+      const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 2, 1);
+      const startKey = startDate.toISOString().slice(0,7);
+      return b.date.slice(0,7) >= startKey && b.date.slice(0,7) <= summary3mAnchor;
     }
+    if (summaryFilter === 'all' && summaryYear) return b.date.slice(0,4) === String(summaryYear);
     return true;
   });
+}
+
+function weekStart(anchorStr) {
+  const d = new Date(anchorStr + 'T12:00:00');
+  d.setDate(d.getDate() - 6);
+  return d.toISOString().slice(0,10);
 }
 
 function renderSummary() {
@@ -2744,49 +2896,46 @@ function renderSummary() {
   });
   legend.innerHTML = legendHTML || '<div style="font-size:12px;color:var(--text3);">No data</div>';
 
-  // Monthly bar chart (grouped side-by-side, adapts to filter)
-  const now = new Date();
+  // Bar chart data — adapts to active filter & anchor
   let barMonths = [];
+  const addBills = (rows) => rows.forEach(b => {
+    const m = barMonths.find(mo => mo.key === (mo.isDay ? b.date?.slice(0,10) : b.date?.slice(0,7)));
+    if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
+  });
   if (summaryFilter === 'week') {
+    const anchor = new Date(summaryWeekAnchor + 'T12:00:00');
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const d = new Date(anchor); d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0,10);
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), longLabel: d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}), a:0, b:0, isDay:true });
+      barMonths.push({ key, isDay:true, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), longLabel: d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}) });
     }
-    state.bills.forEach(b => {
-      const m = barMonths.find(mo => mo.key === b.date?.slice(0,10));
-      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
-    });
+    addBills(state.bills);
   } else if (summaryFilter === '3m') {
+    const endDate = new Date(summary3mAnchor + '-02');
     for (let i = 2; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
+      const d = new Date(endDate.getFullYear(), endDate.getMonth() - i, 1);
+      const key = d.toISOString().slice(0,7);
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
-    state.bills.forEach(b => {
-      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
-      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
-    });
+    addBills(state.bills);
   } else if (summaryFilter === 'all') {
-    const monthKeys = [...new Set(state.bills.map(b => b.date?.slice(0,7)).filter(Boolean))].sort();
+    // Year filter: show months for selected year, or all months if no year
+    const sourceBills = summaryYear ? state.bills.filter(b => b.date?.slice(0,4) === String(summaryYear)) : state.bills;
+    const monthKeys = [...new Set(sourceBills.map(b => b.date?.slice(0,7)).filter(Boolean))].sort();
     monthKeys.forEach(key => {
       const d = new Date(key + '-02');
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     });
-    state.bills.forEach(b => {
-      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
-      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
-    });
+    addBills(sourceBills);
   } else {
-    // month filter: show 6 months around selected
+    // month: show 6 months around selected
+    const sel = new Date(summarySelectedMonth + '-02');
     for (let i = 5; i >= 0; i--) {
-      const sel = new Date(summarySelectedMonth + '-02');
       const d = new Date(sel.getFullYear(), sel.getMonth() - i, 1);
-      barMonths.push({ key: d.toISOString().slice(0,7), label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}), a:0, b:0 });
+      const key = d.toISOString().slice(0,7);
+      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
-    state.bills.forEach(b => {
-      const m = barMonths.find(mo => mo.key === b.date?.slice(0,7));
-      if (m) { m.a += b.shareA||0; m.b += b.shareB||0; }
-    });
+    addBills(state.bills);
   }
   _summaryBarData = barMonths;
   summaryBarIdx = -1;
