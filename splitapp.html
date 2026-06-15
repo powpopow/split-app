@@ -2,12 +2,14 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.0.3 (2026-06-15)
+    - Fix: Items card overflow:visible so dropdown is no longer clipped by card boundary
+    - Fix: Non-assign mode dropdown also hides Shared option when item is already Shared
   v2.0.2 (2026-06-15)
     - Fix: Sync & refresh now calls location.reload() after syncFromSheets() — actually refreshes app code
     - Fix: Assign mode dropdown options stopPropagation so A/B clicks work correctly
     - Fix: Shared option hidden from dropdown when item is already Shared
-    - Fix: Person boxes z-index:1 so items card (z-index:10) dropdown appears above them + refresh
-
+    - Fix: Person boxes z-index:1 so items card (z-index:10) dropdown appears above them
   v2.0.1 (2026-06-15)
     - Bug #31: Custom split % mode now shows Total line (was missing, only ฿ and Qty modes had it)
     - Personal discount rows: removed label input — amount only
@@ -571,7 +573,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.2</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.3</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -685,7 +687,7 @@ const CONFIG = {
 
     <div class="sec-label">Items</div>
     <div id="rv-assign-bar" style="display:flex;gap:8px;margin:0 14px 8px;"></div>
-    <div class="card" style="margin-top:0;position:relative;z-index:10;">
+    <div class="card" style="margin-top:0;position:relative;z-index:10;overflow:visible;">
       <div id="review-items"></div>
     </div>
 
@@ -1719,7 +1721,7 @@ function renderReviewItems() {
         <div class="assign-dropdown" id="assign-dd-${i}">
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'a')"><div class="assign-dd-dot" style="background:var(--acc);"></div>${nameA}</div>
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'b')"><div class="assign-dd-dot" style="background:#a0623a;"></div>${nameB}</div>
-          <div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>
+          ${it.assignment !== 'shared' ? `<div class="assign-dd-opt" onclick="setAssignDirect(${i},'shared')"><div class="assign-dd-dot" style="background:#aaa;"></div>Shared</div>` : ''}
           <div class="assign-dd-opt" onclick="setAssignDirect(${i},'custom')"><div class="assign-dd-dot" style="background:#5340b0;"></div>Custom</div>
         </div>
       </div>
