@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.0.0 (2026-06-15)
+    - Bug #30: Discount inputs in person boxes larger (13px, more padding)
+    - Feature #22: Mid-page person item boxes now plain white cards (coloured name only). Net total panel unchanged.
+    - Feature #16: "Sync & refresh" button added to Settings → About
+    - Feature #20: Voucher fixed amount split — new "Fixed ฿" option shows per-person amount inputs (amtA / amtB)
   v1.9.8 (2026-06-15)
     - Review screen: replace chip left-tap cycle with top assign bar [NameA][NameB][Shared]. Tap a mode, then tap items to assign via checkbox. Uncheck reverts to Shared. ▾ dropdown unchanged.
   v1.9.7 (2026-06-15)
@@ -553,11 +558,15 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">1.9.8</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.0.0</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+      </div>
+      <div class="card-row" onclick="forceRefresh()" style="cursor:pointer;">
+        <div class="row-label">Sync &amp; refresh</div>
+        <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></div>
       </div>
       <div class="card-row">
         <div class="row-label">Receipt OCR</div>
@@ -1900,6 +1909,7 @@ function recalc() {
     const amt = d.amt || 0;
     if (d.assignTo === 'split') { sharedDiscA += amt / 2; sharedDiscB += amt / 2; }
     else if (d.assignTo === 'prop') { sharedDiscA += amt * ratio; sharedDiscB += amt * (1 - ratio); }
+    else if (d.assignTo === 'fixed') { sharedDiscA += d.amtA || 0; sharedDiscB += d.amtB || 0; }
   });
 
   // Distribute SC/VAT proportionally by item share
@@ -1974,11 +1984,11 @@ function renderPersonBoxes() {
     return discs.map(d => `
       <div style="display:flex;align-items:center;gap:4px;margin-top:5px;">
         <input type="text" value="${d.label||''}" placeholder="label"
-          style="flex:1;min-width:0;font-size:11px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
+          style="flex:1;min-width:0;font-size:13px;padding:5px 7px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
           oninput="updateDiscount('${d.id}','label',this.value)">
-        <span style="font-size:11px;color:rgba(0,0,0,0.4);">-</span>
+        <span style="font-size:13px;color:rgba(0,0,0,0.4);">-</span>
         <input type="number" value="${d.amt||''}" placeholder="0" min="0"
-          style="width:54px;font-size:11px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
+          style="width:62px;font-size:13px;padding:5px 7px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:rgba(255,255,255,0.5);"
           oninput="updateDiscount('${d.id}','amt',this.value)">
         <span style="font-size:13px;color:rgba(0,0,0,0.3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
       </div>`).join('');
@@ -1986,19 +1996,19 @@ function renderPersonBoxes() {
 
   document.getElementById('rv-person-boxes').innerHTML = `
     <div style="display:flex;gap:10px;">
-      <div style="flex:1;background:var(--acc-light);border-radius:10px;padding:10px;">
-        <div style="font-size:11px;font-weight:600;color:var(--acc-text);margin-bottom:5px;">${nameA}</div>
+      <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
+        <div style="font-size:11px;font-weight:600;color:var(--acc);margin-bottom:5px;">${nameA}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsA)}</div>
         ${discRows(discA)}
         <div onclick="addPersonDiscount('a')" style="font-size:11px;color:var(--acc);margin-top:6px;cursor:pointer;">+ discount</div>
-        ${sumDiscA > 0 ? `<div style="border-top:0.5px solid rgba(0,0,0,0.1);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc-text);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-sumDiscA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
+        ${sumDiscA > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-sumDiscA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
       </div>
-      <div style="flex:1;background:#FFF0E6;border-radius:10px;padding:10px;">
+      <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:600;color:#a0623a;margin-bottom:5px;">${nameB}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsB)}</div>
         ${discRows(discB)}
         <div onclick="addPersonDiscount('b')" style="font-size:11px;color:#a0623a;margin-top:6px;cursor:pointer;">+ discount</div>
-        ${sumDiscB > 0 ? `<div style="border-top:0.5px solid rgba(0,0,0,0.1);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-sumDiscB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
+        ${sumDiscB > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-sumDiscB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
       </div>
     </div>`;
 }
@@ -2027,29 +2037,52 @@ function removeDiscount(id) {
 function updateDiscount(id, field, value) {
   const d = (currentBill.charges.discounts || []).find(d => d.id === id);
   if (!d) return;
-  d[field] = field === 'amt' ? (parseFloat(value) || 0) : value;
+  d[field] = (field === 'amt' || field === 'amtA' || field === 'amtB') ? (parseFloat(value) || 0) : value;
+  recalc();
+}
+
+function updateDiscountType(id, type) {
+  const d = (currentBill.charges.discounts || []).find(d => d.id === id);
+  if (!d) return;
+  d.assignTo = type;
+  renderSharedDiscounts();
   recalc();
 }
 
 function renderSharedDiscounts() {
-  const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop');
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const discs = (currentBill.charges.discounts || []).filter(d => d.assignTo === 'split' || d.assignTo === 'prop' || d.assignTo === 'fixed');
   const el = document.getElementById('rv-shared-discounts');
   if (!el) return;
   if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 0 6px;">None</div>'; return; }
   el.innerHTML = discs.map(d => `
-    <div style="display:flex;align-items:center;gap:5px;padding:4px 0;">
-      <input type="text" value="${d.label||''}" placeholder="label"
-        style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-        oninput="updateDiscount('${d.id}','label',this.value)">
-      <input type="number" value="${d.amt||''}" placeholder="0" min="0"
-        style="width:62px;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-        oninput="updateDiscount('${d.id}','amt',this.value)">
-      <select style="font-size:11px;padding:5px 4px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
-        onchange="updateDiscount('${d.id}','assignTo',this.value)">
-        <option value="split" ${d.assignTo==='split'?'selected':''}>50/50</option>
-        <option value="prop"  ${d.assignTo==='prop' ?'selected':''}>Proportional</option>
-      </select>
-      <span style="font-size:14px;color:var(--text3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+    <div style="padding:4px 0;">
+      <div style="display:flex;align-items:center;gap:5px;">
+        <input type="text" value="${d.label||''}" placeholder="label"
+          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+          oninput="updateDiscount('${d.id}','label',this.value)">
+        ${d.assignTo !== 'fixed' ? `<input type="number" value="${d.amt||''}" placeholder="0" min="0"
+          style="width:62px;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+          oninput="updateDiscount('${d.id}','amt',this.value)">` : ''}
+        <select style="font-size:11px;padding:5px 4px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+          onchange="updateDiscountType('${d.id}',this.value)">
+          <option value="split" ${d.assignTo==='split'?'selected':''}>50/50</option>
+          <option value="prop"  ${d.assignTo==='prop' ?'selected':''}>Proportional</option>
+          <option value="fixed" ${d.assignTo==='fixed'?'selected':''}>Fixed ฿</option>
+        </select>
+        <span style="font-size:14px;color:var(--text3);cursor:pointer;padding:0 2px;" onclick="removeDiscount('${d.id}')">×</span>
+      </div>
+      ${d.assignTo === 'fixed' ? `<div style="display:flex;align-items:center;gap:5px;margin-top:5px;">
+        <span style="font-size:11px;color:var(--text2);min-width:40px;">${nameA}</span>
+        <input type="number" value="${d.amtA||''}" placeholder="0" min="0"
+          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+          oninput="updateDiscount('${d.id}','amtA',this.value)">
+        <span style="font-size:11px;color:var(--text2);min-width:40px;">${nameB}</span>
+        <input type="number" value="${d.amtB||''}" placeholder="0" min="0"
+          style="flex:1;font-size:12px;padding:5px 7px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);"
+          oninput="updateDiscount('${d.id}','amtB',this.value)">
+      </div>` : ''}
     </div>`).join('');
 }
 
@@ -2068,7 +2101,7 @@ function goToConfirm() {
   if (calc.vat) bdown += `<div class="card-row"><span>VAT (${calc.vatPct}%)</span><span>+${fmt(calc.vat)}</span></div>`;
   (calc.discounts || []).forEach(d => {
     if (!d.amt) return;
-    const typeLabel = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional, post-tax' : '50/50, post-tax';
+    const typeLabel = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional, post-tax' : d.assignTo === 'fixed' ? `fixed ${fmt(d.amtA||0)}/${fmt(d.amtB||0)}, post-tax` : '50/50, post-tax';
     bdown += `<div class="card-row"><span>${d.label || 'Discount'} (${typeLabel})</span><span style="color:var(--grn);">-${fmt(d.amt)}</span></div>`;
   });
   bdown += `<div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(calc.grandTotal)}</span></div>`;
@@ -2396,6 +2429,14 @@ async function fetchConfigFromSheet() {
   } catch(e) {
     console.warn('Could not fetch config from sheet:', e);
   }
+}
+
+// ── FORCE REFRESH ─────────────────────────────────────
+async function forceRefresh() {
+  const el = document.querySelector('[onclick="forceRefresh()"] .row-val');
+  if (el) el.style.opacity = '0.4';
+  await syncFromSheets();
+  if (el) el.style.opacity = '1';
 }
 
 // ── SYNC FROM SHEETS ON LOAD ──────────────────────────
