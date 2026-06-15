@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.23 (2026-06-16)
+    - Fix: Bar chart showing ฿NaN — barMonths entries were missing a:0, b:0 initialisation after addBills() refactor
   v2.1.22 (2026-06-16)
     - Polish: Bar chart taller (chartH 70→110, container 90→120px), labels 8→10px; bar/legend colors now match avatar colors (A=#2E3250 navy, B=#5B8FD4 blue); donut SVG 110→150px, r 38→52, stroke-width 16→18 for larger ring
   v2.1.21 (2026-06-16)
@@ -702,7 +704,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.22</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.23</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -2910,7 +2912,7 @@ function renderSummary() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(anchor); d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0,10);
-      barMonths.push({ key, isDay:true, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), longLabel: d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}) });
+      barMonths.push({ key, isDay:true, a:0, b:0, label: d.toLocaleDateString('en-GB',{weekday:'narrow'}), longLabel: d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}) });
     }
     addBills(state.bills);
   } else if (summaryFilter === '3m') {
@@ -2918,7 +2920,7 @@ function renderSummary() {
     for (let i = 2; i >= 0; i--) {
       const d = new Date(endDate.getFullYear(), endDate.getMonth() - i, 1);
       const key = d.toISOString().slice(0,7);
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
+      barMonths.push({ key, a:0, b:0, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
     addBills(state.bills);
   } else if (summaryFilter === 'all') {
@@ -2927,7 +2929,7 @@ function renderSummary() {
     const monthKeys = [...new Set(sourceBills.map(b => b.date?.slice(0,7)).filter(Boolean))].sort();
     monthKeys.forEach(key => {
       const d = new Date(key + '-02');
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
+      barMonths.push({ key, a:0, b:0, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     });
     addBills(sourceBills);
   } else {
@@ -2936,7 +2938,7 @@ function renderSummary() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(sel.getFullYear(), sel.getMonth() - i, 1);
       const key = d.toISOString().slice(0,7);
-      barMonths.push({ key, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
+      barMonths.push({ key, a:0, b:0, label: d.toLocaleDateString('en-GB',{month:'short'}), longLabel: d.toLocaleDateString('en-GB',{month:'short',year:'numeric'}) });
     }
     addBills(state.bills);
   }
