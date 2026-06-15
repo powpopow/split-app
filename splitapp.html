@@ -2,6 +2,11 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.5 (2026-06-15)
+    - Bug #38: Shared mode — tapping already-shared item now correctly opens A/B/Custom dropdown (regression from v2.1.4 fix)
+    - UX #39: ▾ dropdown button removed from A/B assign mode entirely; only appears in Shared mode for already-shared items
+    - UX #40: Discount popup — Amount field now above Label (label is optional, amount is mandatory)
+    - Bug #41: Add voucher sheet now includes Fixed ฿ option with per-person amtA/amtB inputs
   v2.1.4 (2026-06-15)
     - Bug #33: "None" voucher label now has correct left padding (was overflowing card edge)
     - Polish #27b: theme-color meta added to match app background on Android / iOS 15+ Safari
@@ -603,7 +608,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.4</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.5</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -954,19 +959,32 @@ const CONFIG = {
     <div class="sheet-handle"></div>
     <div id="disc-sheet-title" style="font-size:16px;font-weight:600;margin-bottom:14px;"></div>
     <div style="margin-bottom:8px;">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Label <span style="color:var(--text3);">(optional)</span></div>
-      <input type="text" id="disc-sheet-label" placeholder="e.g. Voucher, Coupon, Staff discount" style="width:100%;">
-    </div>
-    <div style="margin-bottom:12px;">
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Amount</div>
       <input type="number" id="disc-sheet-amt" placeholder="0" min="0" style="width:100%;">
     </div>
-    <div id="disc-sheet-type-row" style="display:none;margin-bottom:14px;">
+    <div id="disc-sheet-type-row" style="display:none;margin-bottom:8px;">
       <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Split</div>
-      <select id="disc-sheet-split-type" style="width:100%;">
+      <select id="disc-sheet-split-type" style="width:100%;" onchange="onDiscSplitTypeChange(this.value)">
         <option value="split">50/50</option>
         <option value="prop">Proportional</option>
+        <option value="fixed">Fixed ฿</option>
       </select>
+    </div>
+    <div id="disc-sheet-fixed-row" style="display:none;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="disc-sheet-a-label">A</div>
+          <input type="number" id="disc-sheet-amtA" placeholder="0" min="0" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="disc-sheet-b-label">B</div>
+          <input type="number" id="disc-sheet-amtB" placeholder="0" min="0" style="width:100%;">
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Label <span style="color:var(--text3);">(optional)</span></div>
+      <input type="text" id="disc-sheet-label" placeholder="e.g. Voucher, Coupon, Staff discount" style="width:100%;">
     </div>
     <button class="btn" onclick="saveDiscSheet()">Add</button>
   </div>
@@ -1784,6 +1802,9 @@ function renderReviewItems() {
       const circleColor = checked ? checkColor : otherAssigned ? otherColor : 'transparent';
       const circleBorder = checked ? checkColor : otherAssigned ? otherColor : 'var(--border)';
       const showCheck = checked || otherAssigned;
+      // ▾ only in Shared mode for already-shared items (to reassign to A/B/Custom)
+      // Never shown in A/B mode — tap is sufficient there
+      const showDropdown = assignMode === 'shared' && checked;
       return `<div class="card-row" style="gap:8px;cursor:pointer;" onclick="toggleItemAssign(${i},event)">
         <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${circleBorder};background:${circleColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           ${showCheck ? '<svg width="12" height="12" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
@@ -1792,9 +1813,9 @@ function renderReviewItems() {
           <div class="text-strong">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
           <div class="text-sub">${fmt(it.price * it.qty)}</div>
         </div>
-        ${!checked ? `<div class="assign-dd-wrap">
-          <div class="assign-chip ${chipClass}" style="padding-left:0;">
-            <div class="chip-dd-btn" onclick="setAssignDirect(${i},'custom');event.stopPropagation();" style="padding:4px 8px;">▾</div>
+        ${showDropdown ? `<div class="assign-dd-wrap">
+          <div class="assign-chip chip-shared" style="padding-left:0;">
+            <div class="chip-dd-btn" onclick="toggleAssignDropdown(${i},event);" style="padding:4px 8px;">▾</div>
           </div>
           ${assignDropdownHTML(i, it, nameA, nameB, true)}
         </div>` : ''}
@@ -2153,13 +2174,25 @@ function addSharedDiscount() {
 function openDiscSheet(context) {
   _discSheetContext = context;
   const isShared = context === 'shared';
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
   document.getElementById('disc-sheet-title').textContent = isShared ? 'Add voucher' : 'Add personal discount';
-  document.getElementById('disc-sheet-label').value = '';
   document.getElementById('disc-sheet-amt').value = '';
+  document.getElementById('disc-sheet-label').value = '';
   document.getElementById('disc-sheet-type-row').style.display = isShared ? '' : 'none';
+  document.getElementById('disc-sheet-fixed-row').style.display = 'none';
+  document.getElementById('disc-sheet-amtA').value = '';
+  document.getElementById('disc-sheet-amtB').value = '';
+  document.getElementById('disc-sheet-a-label').textContent = nameA;
+  document.getElementById('disc-sheet-b-label').textContent = nameB;
   if (document.getElementById('disc-sheet-split-type')) document.getElementById('disc-sheet-split-type').value = 'split';
   document.getElementById('disc-sheet-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('disc-sheet-label').focus(), 150);
+  setTimeout(() => document.getElementById('disc-sheet-amt').focus(), 150);
+}
+
+function onDiscSplitTypeChange(val) {
+  document.getElementById('disc-sheet-fixed-row').style.display = val === 'fixed' ? '' : 'none';
+  document.getElementById('disc-sheet-amt').closest('div').style.display = val === 'fixed' ? 'none' : '';
 }
 
 function closeDiscSheet(e) {
@@ -2169,14 +2202,23 @@ function closeDiscSheet(e) {
 
 function saveDiscSheet() {
   const label = document.getElementById('disc-sheet-label').value.trim();
-  const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
-  if (!amt) { alert('Enter an amount.'); return; }
   if (!currentBill.charges.discounts) currentBill.charges.discounts = [];
   if (_discSheetContext === 'shared') {
     const assignTo = document.getElementById('disc-sheet-split-type').value || 'split';
-    currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Voucher', assignTo });
+    if (assignTo === 'fixed') {
+      const amtA = parseFloat(document.getElementById('disc-sheet-amtA').value) || 0;
+      const amtB = parseFloat(document.getElementById('disc-sheet-amtB').value) || 0;
+      if (!amtA && !amtB) { alert('Enter at least one amount.'); return; }
+      currentBill.charges.discounts.push({ id: Date.now().toString(), amt: amtA + amtB, amtA, amtB, label: label || 'Voucher', assignTo: 'fixed' });
+    } else {
+      const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
+      if (!amt) { alert('Enter an amount.'); return; }
+      currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Voucher', assignTo });
+    }
     renderSharedDiscounts();
   } else {
+    const amt = parseFloat(document.getElementById('disc-sheet-amt').value) || 0;
+    if (!amt) { alert('Enter an amount.'); return; }
     currentBill.charges.discounts.push({ id: Date.now().toString(), amt, label: label || 'Discount', assignTo: _discSheetContext });
     renderPersonBoxes();
   }
