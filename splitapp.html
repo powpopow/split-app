@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.26 (2026-06-16)
+  v2.1.27 (2026-06-16)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -487,7 +487,7 @@ const CONFIG = {
 
   <!-- HOME / DASHBOARD -->
   <div id="screen-home" class="screen active">
-    <div style="padding:16px 16px 6px; display:flex; justify-content:space-between; align-items:flex-start;">
+    <div style="padding:16px 16px 8px; display:flex; justify-content:space-between; align-items:center;">
       <div>
         <div style="font-size:13px; color:var(--text2);" id="home-greeting">Hi there</div>
         <div style="font-size:12px; color:var(--text3);" id="home-date"></div>
@@ -537,9 +537,9 @@ const CONFIG = {
 
   <!-- HISTORY -->
   <div id="screen-history" class="screen">
-    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;padding-top:16px;">
       <div class="page-title">History</div>
-      <div id="history-avatars" style="padding-right:4px;"></div>
+      <div id="history-avatars"></div>
     </div>
     <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
       <div class="chip chip-a" style="white-space:nowrap;" onclick="filterHistory('all')" id="hf-all">All time</div>
@@ -559,6 +559,7 @@ const CONFIG = {
 
   <!-- SUMMARY -->
   <div id="screen-summary" class="screen">
+    <div style="position:sticky;top:0;z-index:100;background:var(--bg);">
     <div class="page-header"><div class="page-title">Summary</div></div>
     <div style="position:relative;">
       <div style="display:flex; gap:6px; padding:0 12px 8px;">
@@ -605,6 +606,8 @@ const CONFIG = {
       <!-- Shared overlay -->
       <div id="sf-dd-overlay" onclick="closeAllSummaryDd()" style="display:none; position:fixed; inset:0; z-index:199;"></div>
     </div>
+    <div id="sf-subtitle" style="font-size:20px;font-weight:600;color:var(--text1);padding:2px 12px 10px;"></div>
+    </div><!-- end sticky -->
 
     <!-- Category donut -->
     <div class="card" style="padding:14px;">
@@ -625,7 +628,7 @@ const CONFIG = {
     <!-- Monthly bar chart -->
     <div class="card" style="padding:14px;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; padding:0 0 6px;">
-        <div class="sec-label" style="padding:0;">Monthly spending</div>
+        <div class="sec-label" style="padding:0;" id="bar-section-label">Monthly spending</div>
         <div id="bar-detail" style="font-size:12px; color:var(--text3);"></div>
       </div>
       <div id="bar-chart" style="display:flex; align-items:flex-end; gap:4px; height:170px;"></div>
@@ -717,7 +720,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.26</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.27</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -2624,14 +2627,20 @@ function getMinBillDate() {
 function weekRangeLabel(anchorStr) {
   const end = new Date(anchorStr + 'T12:00:00');
   const start = new Date(end); start.setDate(start.getDate() - 6);
-  const o = {month:'short', day:'numeric'};
-  return start.toLocaleDateString('en-GB', o) + ' – ' + end.toLocaleDateString('en-GB', o);
+  return start.toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ' – ' + end.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
 }
 
-function range3mLabel(anchorStr) {
+function weekRelLabel(anchorStr) {
+  const anchor = new Date(anchorStr + 'T12:00:00');
+  const now = new Date(); now.setHours(12,0,0,0);
+  const weeksBack = Math.round((now - anchor) / (7*24*60*60*1000));
+  return weeksBack <= 0 ? 'Week' : 'Week –' + weeksBack;
+}
+
+function range3mLabel(anchorStr, showYear) {
   const end = new Date(anchorStr + '-02');
   const start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
-  return start.toLocaleDateString('en-GB',{month:'short'}) + ' – ' + end.toLocaleDateString('en-GB',{month:'short', year:'numeric'});
+  return start.toLocaleDateString('en-GB',{month:'short'}) + ' – ' + end.toLocaleDateString('en-GB', showYear ? {month:'short',year:'numeric'} : {month:'short'});
 }
 
 function closeAllSummaryDd() {
@@ -2651,8 +2660,8 @@ function openSummaryDd(id, renderFn) {
 
 function updateChipLabels() {
   const labels = {
-    week:  summaryFilter === 'week'  ? weekRangeLabel(summaryWeekAnchor) : 'Week',
-    month: summaryFilter === 'month' ? new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short',year:'numeric'}) : 'Month',
+    week:  summaryFilter === 'week'  ? weekRelLabel(summaryWeekAnchor) : 'Week',
+    month: summaryFilter === 'month' ? new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short'}) : 'Month',
     '3m':  summaryFilter === '3m'    ? range3mLabel(summary3mAnchor) : '3 mo',
     all:   summaryFilter === 'all'   ? (summaryYear ? String(summaryYear) : 'Year') : 'Year',
   };
@@ -2665,6 +2674,14 @@ function updateChipLabels() {
       el.textContent = labels[k];
     }
   });
+  // Update range subtitle below chips
+  const sub = document.getElementById('sf-subtitle');
+  if (sub) {
+    if (summaryFilter === 'week')  sub.textContent = weekRangeLabel(summaryWeekAnchor);
+    else if (summaryFilter === 'month') sub.textContent = new Date(summarySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+    else if (summaryFilter === '3m')    sub.textContent = range3mLabel(summary3mAnchor, true);
+    else if (summaryFilter === 'all')   sub.textContent = summaryYear ? String(summaryYear) : 'All time';
+  }
 }
 
 function filterSummary(f) {
@@ -2979,6 +2996,8 @@ function renderSummary() {
   _summaryBarData = barMonths;
   summaryBarIdx = -1;
   document.getElementById('bar-detail').innerHTML = '';
+  const barLbl = document.getElementById('bar-section-label');
+  if (barLbl) barLbl.textContent = summaryFilter === 'week' ? 'Daily spending' : 'Monthly spending';
   renderBarChart();
 
   // Cost breakdown
