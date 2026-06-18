@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.28 (2026-06-18)
+  v2.1.31 (2026-06-18)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.28</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.31</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1676,7 +1676,7 @@ async function handlePhotoUpload(event) {
     startScanMessages(stepEl);
     const base64 = await fileToBase64(file);
 
-    // Build fallback model list: current best first, then others
+    // Build fallback model list: current best first, then known stable fallbacks
     const modelQueue = [geminiModel, 'gemini-2.5-flash', 'gemini-2.0-flash']
       .filter((m, i, arr) => arr.indexOf(m) === i); // dedupe
 
@@ -1772,9 +1772,9 @@ function prefillManualFromOCR(result) {
   if (manualItems.length === 0) manualItems = [{ name: '', qty: 1, price: '' }];
   renderManualItems();
 
-  // Show manual entry tab and navigate to new bill screen
-  switchBillTab('manual');
+  // Navigate to new bill screen first (goTo resets tab to 'upload'), then switch to manual
   goTo('newbill');
+  switchBillTab('manual');
 
   // If no items found, show a toast/hint
   if ((result.items || []).length === 0) {
@@ -3077,20 +3077,19 @@ async function fetchBestGeminiModel() {
     if (!resp.ok) return;
     const data = await resp.json();
 
-    // Filter flash models that support generateContent; exclude non-vision models
+    // Keep dynamic model discovery but filter to base flash models only.
+    // Exclude variant suffixes (-im, -audio, -tts, -search, etc.) — these are
+    // specialised models that don't reliably support vision/image input.
+    // Pattern: gemini-X.Y-flash or gemini-X.Y-flash-NNN (version suffix only)
+    const BASE_FLASH_RE = /^gemini-\d+\.\d+-flash(-\d+)?$/;
     const flashModels = (data.models || [])
       .filter(m => {
-        const n = m.name.toLowerCase();
-        return n.includes('flash') &&
-          (m.supportedGenerationMethods || []).includes('generateContent') &&
-          !n.includes('lite') &&   // prefer full flash over lite
-          !n.includes('tts') &&    // exclude text-to-speech models
-          !n.includes('embedding') && // exclude embedding models
-          !n.includes('aqa');      // exclude attributed question answering models
+        const n = m.name.replace('models/', '');
+        return BASE_FLASH_RE.test(n) &&
+          (m.supportedGenerationMethods || []).includes('generateContent');
       })
       .map(m => m.name.replace('models/', ''))
       .sort((a, b) => {
-        // Sort by version number descending (e.g. gemini-3.5 > gemini-2.5)
         const verA = parseFloat(a.match(/(\d+\.\d+)/)?.[1] || '0');
         const verB = parseFloat(b.match(/(\d+\.\d+)/)?.[1] || '0');
         return verB - verA;
