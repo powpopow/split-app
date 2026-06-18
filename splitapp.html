@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.31 (2026-06-18)
+  v2.1.32 (2026-06-18)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.31</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.32</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -3097,23 +3097,12 @@ async function fetchBestGeminiModel() {
 
     if (!flashModels.length) return;
 
-    // Try each model until one responds successfully
-    for (const model of flashModels) {
-      try {
-        const testResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] })
-        });
-        if (testResp.ok || testResp.status === 400) {
-          // 400 means model works but bad input — that's fine, model is available
-          geminiModel = model;
-          console.log('Using Gemini model:', geminiModel);
-          updateSettingsUI();
-          return;
-        }
-      } catch(e) { /* try next */ }
-    }
+    // Use the top-ranked model directly — no test probe.
+    // Test probes waste generative API quota (counted against rate limits)
+    // before the actual OCR call. The OCR fallback queue handles failures.
+    geminiModel = flashModels[0];
+    console.log('Using Gemini model:', geminiModel);
+    updateSettingsUI();
   } catch(e) {
     console.warn('Could not fetch Gemini models, using default:', geminiModel);
   }
