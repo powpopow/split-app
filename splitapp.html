@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.27 (2026-06-16)
+  v2.1.28 (2026-06-18)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.27</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.28</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1705,12 +1705,18 @@ async function handlePhotoUpload(event) {
 
     if (!result) {
       overlay.classList.remove('open');
-      if (lastErr?.message === 'RATE_LIMIT') {
+      const msg = lastErr?.message || '';
+      if (msg === 'RATE_LIMIT') {
         alert('Too many requests. Please wait a moment and try again, or use manual entry.');
-      } else if (lastErr?.message === 'OVERLOADED') {
+      } else if (msg === 'OVERLOADED') {
         alert('Gemini is busy right now. Please try again in a moment, or use manual entry.');
+      } else if (msg.startsWith('GEMINI_BLOCKED')) {
+        alert('Receipt could not be processed (blocked by safety filter). Try a clearer photo or use manual entry.\n\nCode: ' + msg);
+      } else if (msg === 'GEMINI_PARSE_FAIL') {
+        alert('Gemini responded but could not parse the result. Try again or use manual entry.');
       } else {
-        alert('Could not read receipt after multiple attempts. Please use manual entry.');
+        console.warn('[OCR] all models failed, lastErr:', lastErr);
+        alert('Could not read receipt. Error: ' + (msg || 'unknown') + '\n\nPlease use manual entry.');
       }
       event.target.value = '';
       return;
@@ -1814,9 +1820,34 @@ async function callGeminiOCR(base64, mimeType, model = geminiModel) {
     throw new Error('Gemini API error: ' + code);
   }
   const data = await resp.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  console.log('[Gemini] raw response:', JSON.stringify(data).slice(0, 500));
+
+  // Blocked or empty response (safety filter, bad image, etc.)
+  if (!data.candidates || data.candidates.length === 0) {
+    const reason = data.promptFeedback?.blockReason || 'NO_CANDIDATES';
+    console.warn('[Gemini] blocked/empty response:', reason, data.promptFeedback);
+    throw new Error('GEMINI_BLOCKED:' + reason);
+  }
+
+  const finishReason = data.candidates[0]?.finishReason;
+  if (finishReason && finishReason !== 'STOP') {
+    console.warn('[Gemini] unexpected finishReason:', finishReason);
+    throw new Error('GEMINI_FINISH:' + finishReason);
+  }
+
+  const text = data.candidates[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    console.warn('[Gemini] empty text in response');
+    throw new Error('GEMINI_EMPTY_TEXT');
+  }
+
   const clean = text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-  return JSON.parse(clean);
+  try {
+    return JSON.parse(clean);
+  } catch(e) {
+    console.warn('[Gemini] JSON parse failed. Raw text:', text.slice(0, 300));
+    throw new Error('GEMINI_PARSE_FAIL');
+  }
 }
 
 function goToReview(source) {
