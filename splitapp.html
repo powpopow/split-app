@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.32 (2026-06-18)
+  v2.1.33 (2026-06-18)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.32</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.33</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1687,8 +1687,12 @@ async function handlePhotoUpload(event) {
       const model = modelQueue[i];
       if (i > 0) {
         stopScanMessages();
-        stepEl.textContent = `Having trouble, trying a different model…`;
-        await new Promise(r => setTimeout(r, 1500));
+        // Back off before retrying — rapid retries can themselves trigger rate limits
+        const backoffMs = lastErr?.message === 'RATE_LIMIT' ? 8000 : 2000;
+        stepEl.textContent = lastErr?.message === 'RATE_LIMIT'
+          ? `Rate limited — waiting a moment before retry…`
+          : `Having trouble, trying a different model…`;
+        await new Promise(r => setTimeout(r, backoffMs));
         startScanMessages(stepEl);
       }
       try {
