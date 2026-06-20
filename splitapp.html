@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.45 (2026-06-20)
+  v2.1.47 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -482,12 +482,6 @@ const CONFIG = {
 <!-- ════════════════════════════════════════════════════
      APP SHELL
 ════════════════════════════════════════════════════ -->
-<div id="ptr-indicator" style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;height:0;transition:height 0.15s;background:#F5FAF9;border-bottom:0.5px solid var(--border);pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-  <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text3);">
-    <svg id="ptr-spinner" width="16" height="16" viewBox="0 0 16 16" fill="none" style="transition:transform 0.2s;"><circle cx="8" cy="8" r="6" stroke="var(--acc)" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="10" stroke-linecap="round"/></svg>
-    <span id="ptr-label">Pull to refresh</span>
-  </div>
-</div>
 
 <div id="app" style="display:none;">
 
@@ -728,7 +722,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.45</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.47</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1028,8 +1022,8 @@ const CONFIG = {
 </div>
 
 <!-- Who paid popup (shown after OCR scan) -->
-<div class="sheet-overlay" id="who-paid-overlay">
-  <div class="sheet" style="padding:24px 20px 32px;">
+<div class="sheet-overlay" id="who-paid-overlay" style="align-items:flex-start;padding-top:80px;">
+  <div class="sheet" style="padding:24px 20px 32px;border-radius:20px;">
     <div style="font-size:17px;font-weight:600;color:var(--text);margin-bottom:4px;">Who paid?</div>
     <div style="font-size:13px;color:var(--text3);margin-bottom:24px;" id="who-paid-popup-sub">Receipt scanned — select who paid this bill</div>
     <div style="display:flex;flex-direction:column;gap:12px;">
@@ -1084,7 +1078,7 @@ const CONFIG = {
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-qty-label">A</div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <input type="number" id="csp-a-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('a')">
+            <input type="number" id="csp-a-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('a')" onfocus="this.select()" onblur="resetQtyIfEmpty('a')">
             <span style="font-size:12px;color:var(--text3);">units</span>
           </div>
         </div>
@@ -1092,7 +1086,7 @@ const CONFIG = {
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-qty-label">B</div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <input type="number" id="csp-b-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('b')">
+            <input type="number" id="csp-b-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('b')" onfocus="this.select()" onblur="resetQtyIfEmpty('b')">
             <span style="font-size:12px;color:var(--text3);">units</span>
           </div>
         </div>
@@ -1949,7 +1943,13 @@ function prefillManualFromOCR(result) {
   updateToggle('sc');
   updateToggle('vat');
 
-  // Show who-paid popup before revealing form
+  // Navigate to filled form first so it shows as background behind popup
+  goTo('newbill');
+  switchBillTab('manual');
+  renderOcrDiscounts();
+  updateManualTotal();
+
+  // Show who-paid popup on top of the filled form
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
   const merchant = result.merchant || 'this bill';
@@ -1970,15 +1970,9 @@ function prefillManualFromOCR(result) {
   }
 }
 
-let _pendingOcrNav = false;
 function selectWhoPaidPopup(person) {
   document.getElementById('who-paid-overlay').classList.remove('open');
   setWhoPaid('manual', person);
-  // Now navigate to form
-  goTo('newbill');
-  switchBillTab('manual');
-  renderOcrDiscounts();
-  updateManualTotal();
   if (window._ocrNoItems) {
     window._ocrNoItems = false;
     setTimeout(() => alert('No items found on receipt. Please fill in manually.'), 300);
@@ -2314,9 +2308,9 @@ function openCustomSplit(i) {
   // Pre-fill values
   document.getElementById('csp-a-pct').value = it.splitA || 50;
   document.getElementById('csp-b-pct').value = it.splitB || 50;
-  const aQty = it.qtyA != null ? it.qtyA : 0;
-  const bQty = it.qtyB != null ? it.qtyB : totalQty;
-  document.getElementById('csp-a-qty').value = aQty || '';
+  const aQty = it.qtyA != null ? it.qtyA : Math.ceil(totalQty / 2);
+  const bQty = it.qtyB != null ? it.qtyB : Math.floor(totalQty / 2);
+  document.getElementById('csp-a-qty').value = aQty;
   document.getElementById('csp-b-qty').value = bQty;
   const aAmt = it.amtA != null ? it.amtA : Math.round(totalAmt / 2 * 100) / 100;
   document.getElementById('csp-a-amt').value = aAmt;
@@ -2352,19 +2346,32 @@ function syncSplit(side) {
   updateCustomPreview();
 }
 
+function resetQtyIfEmpty(side) {
+  const it = currentBill.items[customSplitItemIdx];
+  if (!it) return;
+  const totalQty = it.qty || 1;
+  const aEl = document.getElementById('csp-a-qty');
+  const bEl = document.getElementById('csp-b-qty');
+  const aVal = parseFloat(aEl.value);
+  const bVal = parseFloat(bEl.value);
+  if (isNaN(aVal) || isNaN(bVal) || aEl.value === '' || bEl.value === '') {
+    aEl.value = Math.ceil(totalQty / 2);
+    bEl.value = Math.floor(totalQty / 2);
+    updateCustomPreview();
+  }
+}
+
 function syncQty(side) {
   const it = currentBill.items[customSplitItemIdx];
   const totalQty = it ? (it.qty || 1) : 1;
   const aEl = document.getElementById('csp-a-qty');
   const bEl = document.getElementById('csp-b-qty');
   if (side === 'a') {
-    const raw = aEl.value === '' ? '' : parseFloat(aEl.value);
-    const a = raw === '' ? 0 : Math.min(totalQty, Math.max(0, raw));
+    const a = Math.min(totalQty, Math.max(0, parseFloat(aEl.value) || 0));
     bEl.value = Math.round((totalQty - a) * 100) / 100;
   } else {
-    const raw = bEl.value === '' ? '' : parseFloat(bEl.value);
-    const b = raw === '' ? 0 : Math.min(totalQty, Math.max(0, raw));
-    aEl.value = raw === '' ? '' : Math.round((totalQty - b) * 100) / 100;
+    const b = Math.min(totalQty, Math.max(0, parseFloat(bEl.value) || 0));
+    aEl.value = Math.round((totalQty - b) * 100) / 100;
   }
   updateCustomPreview();
 }
@@ -3572,43 +3579,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // Close assignment dropdowns on tap outside
   document.addEventListener('click', () => closeAllAssignDropdowns());
 
-  // Pull-to-refresh
-  let ptrStartY = 0, ptrActive = false;
-  const PTR_THRESHOLD = 72;
-  const ptrEl = document.getElementById('ptr-indicator');
-  const ptrLabel = document.getElementById('ptr-label');
-  const ptrSpinner = document.getElementById('ptr-spinner');
-
-  document.addEventListener('touchstart', e => {
-    if (window.scrollY === 0) { ptrStartY = e.touches[0].clientY; ptrActive = true; }
-  }, { passive: true });
-
-  document.addEventListener('touchmove', e => {
-    if (!ptrActive) return;
-    const dy = e.touches[0].clientY - ptrStartY;
-    if (dy <= 0) { ptrActive = false; ptrEl.style.height = '0'; return; }
-    const h = Math.min(dy * 0.45, PTR_THRESHOLD);
-    ptrEl.style.height = h + 'px';
-    const progress = Math.min(dy / PTR_THRESHOLD, 1);
-    ptrSpinner.style.transform = `rotate(${progress * 360}deg)`;
-    ptrLabel.textContent = dy >= PTR_THRESHOLD ? 'Release to refresh' : 'Pull to refresh';
-  }, { passive: true });
-
-  document.addEventListener('touchend', async () => {
-    if (!ptrActive) return;
-    ptrActive = false;
-    const h = parseInt(ptrEl.style.height) || 0;
-    if (h >= PTR_THRESHOLD * 0.85 && currentUser) {
-      ptrEl.style.height = '64px';
-      ptrLabel.textContent = 'Refreshing…';
-      ptrSpinner.style.animation = 'spin 0.8s linear infinite';
-      await syncFromSheets();
-      ptrLabel.textContent = 'Updated ✓';
-      setTimeout(() => { ptrEl.style.height = '0'; ptrSpinner.style.animation = ''; }, 800);
-    } else {
-      ptrEl.style.height = '0';
-    }
-  });
 });
 </script>
 
