@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.33 (2026-06-18)
+  v2.1.34 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.33</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.34</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -793,6 +793,38 @@ const CONFIG = {
         <div id="manual-items"></div>
         <div class="card-row" onclick="addManualItem()" style="cursor:pointer; color:var(--acc);">
           <div style="font-size:14px;">+ Add item</div>
+        </div>
+      </div>
+
+      <div class="sec-label">Charges</div>
+      <div class="card" style="margin-top:0;">
+        <div class="card-row">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;">
+            <div onclick="toggleCharge('sc')" class="toggle" id="toggle-sc"></div>
+            <div style="font-size:13px;">Service charge</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;" id="sc-input">
+            <input type="number" id="sc-pct" value="10" min="0" max="100" style="width:52px;padding:6px 8px;font-size:13px;" oninput="recalc();updateManualTotal()">
+            <span style="font-size:12px;color:var(--text2);">%</span>
+          </div>
+        </div>
+        <div class="card-row">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;">
+            <div onclick="toggleCharge('vat')" class="toggle" id="toggle-vat"></div>
+            <div style="font-size:13px;">VAT</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;" id="vat-input">
+            <input type="number" id="vat-pct" value="7" min="0" max="100" style="width:52px;padding:6px 8px;font-size:13px;" oninput="recalc();updateManualTotal()">
+            <span style="font-size:12px;color:var(--text2);">%</span>
+          </div>
+        </div>
+        <div id="manual-discounts-list"></div>
+        <div class="card-row" onclick="addSharedDiscount()" style="cursor:pointer;">
+          <div style="font-size:13px;color:var(--acc);">+ Add voucher / discount</div>
+        </div>
+        <div class="card-row" style="border-top:0.5px solid var(--border);margin-top:4px;padding-top:12px;">
+          <div style="font-size:14px;font-weight:600;">Total</div>
+          <div style="font-size:14px;font-weight:600;" id="manual-grand-total">฿0</div>
         </div>
       </div>
 
@@ -1334,12 +1366,26 @@ function showBillDetail(id) {
   let itemsHTML = '';
   if (b.items && b.items.length) {
     itemsHTML = b.items.map(it => {
-      const assign = it.assignment === 'a' ? `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`
-        : it.assignment === 'b' ? `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`
-        : `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">Shared</span>`;
-      return `<div class="card-row">
-        <div style="flex:1;min-width:0;font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
-        <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(it.price * (it.qty||1))}</span></div>
+      const total = it.price * (it.qty || 1);
+      const splitA = it.splitA ?? 50;
+      const splitB = it.splitB ?? 50;
+      let assign, breakdown = '';
+      if (it.assignment === 'a') {
+        assign = `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`;
+      } else if (it.assignment === 'b') {
+        assign = `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`;
+      } else {
+        assign = `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">Shared</span>`;
+        const amtA = total * splitA / 100;
+        const amtB = total * splitB / 100;
+        breakdown = `<div style="font-size:11px;color:var(--text3);margin-top:2px;">${nameA} ${fmt(amtA)} · ${nameB} ${fmt(amtB)}</div>`;
+      }
+      return `<div class="card-row" style="align-items:flex-start;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
+          ${breakdown}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding-top:1px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(total)}</span></div>
       </div>`;
     }).join('');
   } else {
@@ -1625,13 +1671,25 @@ function renderManualItems() {
     `<div class="card-row" style="gap:8px;">
       <input type="text" placeholder="Item name" value="${item.name}" style="flex:2;min-width:0;" oninput="manualItems[${i}].name=this.value">
       <input type="number" placeholder="Qty" value="${item.qty||1}" min="1" style="width:46px;flex:none;" oninput="manualItems[${i}].qty=parseInt(this.value)||1">
-      <input type="number" placeholder="Total" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value">
+      <input type="number" placeholder="Total" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value;updateManualTotal()">
       ${manualItems.length>1 ? `<div onclick="removeManualItem(${i})" style="color:var(--red);font-size:18px;cursor:pointer;padding:0 4px;">×</div>` : ''}
     </div>`).join('');
 }
 
 function addManualItem() { manualItems.push({ name:'', qty:1, price:'' }); renderManualItems(); }
-function removeManualItem(i) { manualItems.splice(i, 1); renderManualItems(); }
+function removeManualItem(i) { manualItems.splice(i, 1); renderManualItems(); updateManualTotal(); }
+
+function updateManualTotal() {
+  const subtotal = manualItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0);
+  const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
+  const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
+  const sc = subtotal * scPct / 100;
+  const vat = (subtotal + sc) * vatPct / 100;
+  const discTotal = (_ocrDiscounts || []).reduce((s, d) => s + (d.amount || 0), 0);
+  const total = subtotal + sc + vat - discTotal;
+  const el = document.getElementById('manual-grand-total');
+  if (el) el.textContent = fmt(Math.max(0, total));
+}
 
 function triggerPhotoUpload() { document.getElementById('photo-input').click(); }
 
@@ -1776,9 +1834,28 @@ function prefillManualFromOCR(result) {
   if (manualItems.length === 0) manualItems = [{ name: '', qty: 1, price: '' }];
   renderManualItems();
 
+  // Pre-fill service charge & VAT from OCR
+  if (result.service_charge_percent > 0) {
+    charges.sc = true;
+    const scEl = document.getElementById('sc-pct');
+    if (scEl) scEl.value = result.service_charge_percent;
+  } else {
+    charges.sc = false;
+  }
+  if (result.vat_percent > 0) {
+    charges.vat = true;
+    const vatEl = document.getElementById('vat-pct');
+    if (vatEl) vatEl.value = result.vat_percent;
+  } else {
+    charges.vat = false;
+  }
+  updateToggle('sc');
+  updateToggle('vat');
+
   // Navigate to new bill screen first (goTo resets tab to 'upload'), then switch to manual
   goTo('newbill');
   switchBillTab('manual');
+  updateManualTotal();
 
   // If no items found, show a toast/hint
   if ((result.items || []).length === 0) {
@@ -2175,6 +2252,7 @@ function toggleCharge(key) {
   charges[key] = !charges[key];
   updateToggle(key);
   recalc();
+  updateManualTotal();
 }
 
 function updateToggle(key) {
