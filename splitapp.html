@@ -2,6 +2,13 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.62 (2026-06-21)
+    - Fix #97: saveBill() reset block did not clear whoPaidManual — next manual bill would show previous payer pre-selected; goToReview() guard (if !whoPaidManual) would pass silently; added whoPaidManual = null + who-btn class reset to match cancelNewBill() behaviour
+  v2.1.61 (2026-06-21)
+    - Fix #95: init() used today.toISOString() for bill-date default — now uses localToday(); same UTC-shift bug fixed in v2.1.59 for other fields but init() was missed
+    - Fix #95: renderHome() "bills this month" stat used new Date().toISOString().slice(0,7) — now uses localToday().slice(0,7); between midnight and 7am in UTC+7 home showed last month's stats
+    - Fix #96: filterSummary() used now.toISOString() to set week/month/3m anchors on first chip tap — now uses localToday(); filterHistory('month') same fix
+    - Fix #96: module-level summary/history anchor initializations (summarySelectedMonth, summaryWeekAnchor, summary3mAnchor, historySelectedMonth) used toISOString() — now computed via local date parts at init time
   v2.1.60 (2026-06-21)
     - Feature: History "All time" chip now opens year picker dropdown; chip label updates to selected year (e.g. "2026"); "All time" option inside dropdown clears the year filter
   v2.1.59 (2026-06-21)
@@ -812,7 +819,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.60</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.62</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1271,17 +1278,21 @@ let charges = { sc: false, vat: false };
 let customSplitItemIdx = -1;
 let summaryFilter = 'month';
 let summaryPersonFilter = 'both';
-let summarySelectedMonth = new Date().toISOString().slice(0,7);
-let summaryMonthDdYear = new Date().getFullYear();
-let summaryWeekAnchor = new Date().toISOString().slice(0,10);
-let summary3mAnchor = new Date().toISOString().slice(0,7);
+// Local date helpers for initialization (localToday() is defined below, not yet in scope here)
+const _initD = new Date();
+const _initToday = `${_initD.getFullYear()}-${String(_initD.getMonth()+1).padStart(2,'0')}-${String(_initD.getDate()).padStart(2,'0')}`;
+const _initMonth = _initToday.slice(0,7);
+let summarySelectedMonth = _initMonth;
+let summaryMonthDdYear = _initD.getFullYear();
+let summaryWeekAnchor = _initToday;
+let summary3mAnchor = _initMonth;
 let summaryYear = null;
 let summaryBarIdx = -1;
 let _summaryBarData = [];
 let historyFilter = 'all';
 let historyYear = null;
-let historySelectedMonth = new Date().toISOString().slice(0,7);
-let historyMonthDdYear = new Date().getFullYear();
+let historySelectedMonth = _initMonth;
+let historyMonthDdYear = _initD.getFullYear();
 let whoPaidManual = null;
 let editingBillId = null;
 let _ocrReceiptTotal = null;
@@ -1292,7 +1303,7 @@ function init() {
   loadFromStorage();
   const today = new Date();
   document.getElementById('home-date').textContent = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' });
-  document.getElementById('bill-date').value = today.toISOString().split('T')[0];
+  document.getElementById('bill-date').value = localToday();
   updateSettingsUI();
   renderHome();
 }
@@ -1417,7 +1428,7 @@ function renderHome() {
   }
 
   // Stats
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = localToday().slice(0, 7);
   const monthBills = state.bills.filter(b => b.date && b.date.slice(0, 7) === thisMonth);
   const totalSpent = monthBills.reduce((s, b) => s + (b.grandTotal || 0), 0);
   document.getElementById('stat-bills').textContent = monthBills.length;
@@ -1773,7 +1784,7 @@ function filterHistory(f) {
     document.getElementById('hf-all-dd').style.display = 'block';
   }
   if (f === 'month') {
-    historySelectedMonth = new Date().toISOString().slice(0,7);
+    historySelectedMonth = localToday().slice(0,7);
     historyMonthDdYear = new Date().getFullYear();
     renderHistoryMonthDd();
     document.getElementById('hf-month-dd').style.display = 'block';
@@ -3213,6 +3224,8 @@ async function saveBill() {
   // Reset
   currentBill = {};
   charges = { sc:false, vat:false };
+  whoPaidManual = null;
+  document.querySelectorAll('.who-btn').forEach(el => el.className = 'who-btn');
   initManualItems();
   ['sc','vat'].forEach(k => updateToggle(k));
   document.getElementById('bill-place').value = '';
@@ -3346,9 +3359,9 @@ function filterSummary(f) {
   }
   closeAllSummaryDd();
   // First tap: activate with sensible defaults
-  if (f === 'week')  { summaryWeekAnchor = now.toISOString().slice(0,10); }
-  if (f === 'month') { summarySelectedMonth = now.toISOString().slice(0,7); summaryMonthDdYear = now.getFullYear(); }
-  if (f === '3m')    { summary3mAnchor = now.toISOString().slice(0,7); }
+  if (f === 'week')  { summaryWeekAnchor = localToday(); }
+  if (f === 'month') { summarySelectedMonth = localToday().slice(0,7); summaryMonthDdYear = now.getFullYear(); }
+  if (f === '3m')    { summary3mAnchor = localToday().slice(0,7); }
   if (f === 'all')   { /* summaryYear stays as-is */ }
   summaryFilter = f;
   ['week','month','3m','all'].forEach(k => {
