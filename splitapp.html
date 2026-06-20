@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.59 (2026-06-21)
+    - Fix #94: dates shifted -1 day (or more) after sync from Sheets — root cause: Sheets returns Date cells as JS Date objects; JSON.stringify converts to UTC, subtracting timezone offset (UTC+7 → -7h → previous day); fix in appsscript v1.7.0 (Utilities.formatDate to YYYY-MM-DD) + defensive T12:00:00 in syncFromSheets date parser + localToday() helper for all default-date fields
   v2.1.58 (2026-06-21)
     - Fix #93: edit bill changes (date, place, etc.) reverted after save — race condition where syncFromSheets() ran before Apps Script committed the update (no-cors fetch resolves on send not on write); edit save is now fire-and-forget, local state is authoritative
   v2.1.57 (2026-06-21)
@@ -803,7 +805,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.58</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.59</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1281,7 +1283,7 @@ let _ocrDiscounts = [];
 function init() {
   loadFromStorage();
   const today = new Date();
-  document.getElementById('home-date').textContent = today.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' });
+  document.getElementById('home-date').textContent = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' });
   document.getElementById('bill-date').value = today.toISOString().split('T')[0];
   updateSettingsUI();
   renderHome();
@@ -1345,6 +1347,12 @@ function goTo(screen) {
 }
 
 // ── UTILITIES ─────────────────────────────────────────
+// Returns today's date as YYYY-MM-DD in LOCAL time (not UTC — avoids early-morning timezone shift)
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function fmt(n) { return CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:3}); }
 function fmtSigned(n) { return (n >= 0 ? '+' : '-') + CONFIG.currencySymbol + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:3}); }
 function fmtDate(d) {
@@ -1457,7 +1465,7 @@ function cancelNewBill() {
   _ocrDiscounts = [];
   initManualItems();
   document.getElementById('bill-place').value = '';
-  document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('bill-date').value = localToday();
   document.getElementById('bill-category').value = '';
   ['sc','vat'].forEach(k => updateToggle(k));
   clearPlaceOcrNote();
@@ -3161,7 +3169,7 @@ async function saveBill() {
   initManualItems();
   ['sc','vat'].forEach(k => updateToggle(k));
   document.getElementById('bill-place').value = '';
-  document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('bill-date').value = localToday();
   document.getElementById('bill-category').value = '';
   clearPlaceOcrNote();
   const titleEl = document.getElementById('newbill-page-title');
@@ -3738,7 +3746,7 @@ async function syncFromSheets() {
     // Rebuild state from sheets (sheets is source of truth)
     state.bills = data.bills.map(r => ({
       id: String(r.ID || r.id || Date.now()),
-      date: (() => { const raw = String(r.Date || r.date || '').trim(); if (!raw) return ''; const dt = new Date(raw); return isNaN(dt.getTime()) ? raw : dt.toISOString().split('T')[0]; })(),
+      date: (() => { const raw = String(r.Date || r.date || '').trim(); if (!raw) return ''; if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw; const dt = new Date(raw.includes('T') ? raw : raw + 'T12:00:00'); return isNaN(dt.getTime()) ? raw : dt.toISOString().split('T')[0]; })(),
       place: r.Place || r.place || '',
       category: r.Category || r.category || '',
       paidBy: (r['Paid By'] || r.paidBy || '') === (CONFIG.personA || 'A') ? 'a' : 'b',
