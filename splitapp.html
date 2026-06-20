@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.53 (2026-06-21)
+    - Fix #89: edit state (editingBillId + currentBill with old item assignments) now cleared on Cancel and on deleteBill — was bleeding into the next new bill upload if user had tapped Edit before deleting
+    - Fix #89: cancelNewBill() function replaces goTo('home') on Cancel button — resets editingBillId, currentBill, manualItems, whoPaidManual, charges, form fields
+    - Fix #89: goToReview() defensive check — falls through to new-bill branch if editingBillId no longer exists in state.bills
   v2.1.52 (2026-06-21)
     - UX: Small refresh button (↺) added to top-right of hero balance card — spins while pulling, calls syncFromSheets()
   v2.1.51 (2026-06-21)
@@ -774,7 +778,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.49</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.53</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -795,7 +799,7 @@ const CONFIG = {
   <!-- NEW BILL: STEP 1 — CAPTURE -->
   <div id="screen-newbill" class="screen">
     <div class="page-header">
-      <div class="back-btn" onclick="goTo('home')">
+      <div class="back-btn" onclick="cancelNewBill()">
         <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
         Cancel
       </div>
@@ -1409,6 +1413,24 @@ function billRowHTML(b) {
   </div>`;
 }
 
+function cancelNewBill() {
+  // Clear all edit/new-bill state so it can't bleed into the next upload session
+  editingBillId = null;
+  currentBill = {};
+  whoPaidManual = null;
+  charges = { sc: false, vat: false };
+  _ocrReceiptTotal = null;
+  _ocrDiscounts = [];
+  initManualItems();
+  document.getElementById('bill-place').value = '';
+  document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('bill-category').value = '';
+  ['sc','vat'].forEach(k => updateToggle(k));
+  clearPlaceOcrNote();
+  renderOcrDiscounts();
+  goTo('home');
+}
+
 function editBill(id) {
   const b = state.bills.find(b => b.id === id);
   if (!b) return;
@@ -1564,6 +1586,11 @@ function deleteBill(id) {
   if (b.paidBy === 'a') state.runningBalance -= (b.grandTotal - b.shareA);
   else state.runningBalance += b.shareA;
   state.bills.splice(idx, 1);
+  // Clear edit state if this bill was being edited (prevents stale assignments bleeding into next upload)
+  if (editingBillId === String(id)) {
+    editingBillId = null;
+    currentBill = {};
+  }
   saveToStorage();
   goTo('history');
   callDeleteBill(id);
@@ -2146,6 +2173,11 @@ function goToReview(source) {
     if (!formItems.length) { alert('Add at least one item.'); return; }
     if (!whoPaidManual) { alert('Please select who paid.'); return; }
 
+    // Defensive: if editingBillId no longer exists in state (e.g. deleted), treat as new bill
+    if (editingBillId && !state.bills.find(b => b.id === editingBillId)) {
+      editingBillId = null;
+      currentBill = {};
+    }
     if (editingBillId && currentBill) {
       // Editing: merge form fields into existing bill, preserving all item assignments
       currentBill.date = date;
