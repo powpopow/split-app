@@ -2,6 +2,12 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.51 (2026-06-21)
+    - Fix #87: syncToSheets/callUpdateBill now include charges_json (SC%, VAT%, discount details persisted to Sheets)
+    - Fix #87: syncFromSheets parses charges_json back into bill.charges (cross-device detail display)
+    - Fix #87: showBillDetail recalculates SC/VAT amounts on-the-fly from charges config when stored calc fields are absent
+  v2.1.50 (2026-06-21)
+    - Fix #86: goToReview() null-guards currentBill.charges — edit crash (TypeError) when bill was synced from Sheets with no charges field
   v2.1.49 (2026-06-21)
     - Fix: screen-newbill inline padding-bottom:20px was overriding .screen class padding — Next → button now reachable after nav became position:fixed
   v2.1.48 (2026-06-21)
@@ -1477,6 +1483,19 @@ function showBillDetail(id) {
     itemsHTML = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>`;
   }
 
+  // Derive display amounts: prefer stored calc fields (saveBill), fall back to live calc from charges config
+  const _ch = b.charges || {};
+  const _dSubtotal = b.subtotal != null ? b.subtotal
+    : (b.items || []).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
+  const _dSc = b.sc != null ? b.sc
+    : (_ch.sc ? _dSubtotal * (_ch.scPct || 10) / 100 : 0);
+  const _dVat = b.vat != null ? b.vat
+    : (_ch.vat ? (_dSubtotal + _dSc) * (_ch.vatPct || 7) / 100 : 0);
+  const _dScPct = b.scPct || _ch.scPct || 10;
+  const _dVatPct = b.vatPct || _ch.vatPct || 7;
+  const _chDiscs = (_ch.discounts || []);
+  const _hasCharges = _dSc > 0 || _dVat > 0 || _chDiscs.length > 0;
+
   document.getElementById('bill-detail-title').textContent = b.place || 'Bill detail';
   document.getElementById('bill-detail-content').innerHTML = `
     <div style="margin:8px 0 16px;">
@@ -1484,13 +1503,13 @@ function showBillDetail(id) {
     </div>
     <div class="sec-label">Items</div>
     <div class="card" style="margin-top:0;">${itemsHTML}</div>
-    ${(b.sc || b.vat || (b.charges && b.charges.discounts && b.charges.discounts.length)) ? `
+    ${_hasCharges ? `
     <div class="sec-label">Charges</div>
     <div class="card" style="margin-top:0;">
-      ${b.subtotal ? `<div class="card-row"><span style="font-size:13px;">Items subtotal</span><span style="font-size:13px;">${fmt(b.subtotal)}</span></div>` : ''}
-      ${b.sc ? `<div class="card-row"><span style="font-size:13px;">Service charge (${b.scPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(b.sc)}</span></div>` : ''}
-      ${b.vat ? `<div class="card-row"><span style="font-size:13px;">VAT (${b.vatPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(b.vat)}</span></div>` : ''}
-      ${(b.charges && b.charges.discounts || []).map(d => d.amt ? `<div class="card-row"><span style="font-size:13px;">${d.label || 'Discount'}</span><span style="font-size:13px;color:var(--grn,#2a9d5c);">−${fmt(d.amt)}</span></div>` : '').join('')}
+      <div class="card-row"><span style="font-size:13px;">Items subtotal</span><span style="font-size:13px;">${fmt(_dSubtotal)}</span></div>
+      ${_dSc > 0 ? `<div class="card-row"><span style="font-size:13px;">Service charge (${_dScPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dSc)}</span></div>` : ''}
+      ${_dVat > 0 ? `<div class="card-row"><span style="font-size:13px;">VAT (${_dVatPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dVat)}</span></div>` : ''}
+      ${_chDiscs.map(d => d.amt ? `<div class="card-row"><span style="font-size:13px;">${d.label || 'Discount'}</span><span style="font-size:13px;color:var(--grn,#2a9d5c);">−${fmt(d.amt)}</span></div>` : '').join('')}
       <div class="card-row" style="font-weight:600;border-top:0.5px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
     </div>` : ''}
     <div class="sec-label">Totals</div>
@@ -1567,6 +1586,7 @@ async function callUpdateBill(bill) {
         shareB: bill.shareB,
         runningBalance: state.runningBalance,
         items_json: JSON.stringify(bill.items || []),
+        charges_json: JSON.stringify(bill.charges || {}),
       }
     }),
   });
@@ -2138,7 +2158,9 @@ function goToReview(source) {
   }
 
   // Sync charge toggles from currentBill
-  const ch = currentBill.charges;
+  // Null-guard: bills synced from Sheets have no charges field until #87 is live
+  const ch = currentBill.charges || { sc: false, vat: false, scPct: 10, vatPct: 7, discounts: [] };
+  if (!currentBill.charges) currentBill.charges = ch;
   // Backward compat: migrate old disc/voucher fields to discounts array
   if (!ch.discounts) {
     ch.discounts = [];
@@ -2977,6 +2999,7 @@ async function syncToSheets(bill) {
       shareB: bill.shareB,
       runningBalance: state.runningBalance,
       items_json: JSON.stringify(bill.items || []),
+      charges_json: JSON.stringify(bill.charges || {}),
     }
   };
   await fetch(CONFIG.googleSheetUrl, {
@@ -3519,6 +3542,7 @@ async function syncFromSheets() {
       shareA: parseFloat(r['Share A'] || r.shareA) || 0,
       shareB: parseFloat(r['Share B'] || r.shareB) || 0,
       items: (() => { try { return JSON.parse(r.items_json || r['items_json'] || '[]'); } catch(e) { return []; } })(),
+      charges: (() => { try { const raw = r.charges_json || r['charges_json'] || ''; return raw ? JSON.parse(raw) : null; } catch(e) { return null; } })(),
     }));
     // Recalculate running balance from all bills
     state.runningBalance = state.bills.reduce((bal, b) => {
