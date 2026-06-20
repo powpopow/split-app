@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.38 (2026-06-20)
+  v2.1.39 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.38</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.39</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1717,6 +1717,26 @@ function updateManualTotal() {
   if (el) el.textContent = fmt(Math.max(0, total));
 }
 
+function renderOcrDiscounts() {
+  const el = document.getElementById('manual-discounts-list');
+  if (!el) return;
+  if (!_ocrDiscounts || _ocrDiscounts.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = _ocrDiscounts.map((d, i) => `
+    <div class="card-row" style="color:var(--green,#2a9d5c);">
+      <div style="font-size:13px;">🏷 ${d.description || 'Discount'}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;">−${fmt(d.amount)}</span>
+        <span onclick="removeOcrDiscount(${i})" style="color:var(--red);font-size:16px;cursor:pointer;padding:0 2px;">×</span>
+      </div>
+    </div>`).join('');
+}
+
+function removeOcrDiscount(i) {
+  _ocrDiscounts.splice(i, 1);
+  renderOcrDiscounts();
+  updateManualTotal();
+}
+
 function triggerPhotoUpload() { document.getElementById('photo-input').click(); }
 
 // Scan message cycling
@@ -1881,6 +1901,7 @@ function prefillManualFromOCR(result) {
   // Navigate to new bill screen first (goTo resets tab to 'upload'), then switch to manual
   goTo('newbill');
   switchBillTab('manual');
+  renderOcrDiscounts();
   updateManualTotal();
 
   // If no items found, show a toast/hint
@@ -1909,7 +1930,13 @@ async function callGeminiOCR(base64, mimeType, model = geminiModel) {
   "vat_percent": 0,
   "discounts": [{"description": "text", "amount": 0}],
   "total": 0
-}`;
+}
+
+Rules:
+- service_charge_percent: extract the % rate (e.g. 10 for 10%). Set 0 if none.
+- vat_percent: ONLY set this if VAT is charged as an ADDITIONAL amount on top of the subtotal. If the receipt says "VAT included", "VAT inclusive", "inc. VAT", or shows VAT as an informational breakdown of prices already charged, set vat_percent to 0.
+- discounts: include coupons, vouchers, and any negative line items. amount should be positive (the deduction value).
+- total: the final amount actually paid (after all charges and discounts).`;
 
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
     method: 'POST',
@@ -1995,6 +2022,7 @@ function goToReview(source) {
       currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
       _ocrReceiptTotal = null;
       _ocrDiscounts = [];
+      renderOcrDiscounts();
     }
   }
 
