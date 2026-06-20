@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.58 (2026-06-21)
+    - Fix #93: edit bill changes (date, place, etc.) reverted after save — race condition where syncFromSheets() ran before Apps Script committed the update (no-cors fetch resolves on send not on write); edit save is now fire-and-forget, local state is authoritative
   v2.1.57 (2026-06-21)
     - Feature: History tab month picker — "Month" chip opens year nav + month grid dropdown; chip label updates to selected month (e.g. "Jun 2026"); dropdown closes on nav away
   v2.1.56 (2026-06-21)
@@ -801,7 +803,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.57</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.58</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -3143,9 +3145,12 @@ async function saveBill() {
   state.bills.push(bill);
   saveToStorage();
 
-  // Sync to Google Sheets then pull fresh data
+  // Sync to Google Sheets
+  // For edits: fire-and-forget — local state is already correct; pulling immediately
+  // after would race with Apps Script commit (no-cors fetch resolves on send, not on write)
+  // and overwrite local state with stale Sheets data.
   if (isEditing) {
-    callUpdateBill(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets update failed:', e));
+    callUpdateBill(bill).catch(e => console.warn('Sheets update failed:', e));
   } else {
     syncToSheets(bill).then(() => syncFromSheets()).catch(e => console.warn('Sheets sync failed:', e));
   }
