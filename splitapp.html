@@ -2,6 +2,9 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.54 (2026-06-21)
+    - Fix #90: editBill() now restores SC/VAT toggles, percentages, and discounts to the manual entry form
+    - Fix #90: goToReview() edit branch now syncs charges from form state back into currentBill.charges (SC/VAT/discounts editable during edit)
   v2.1.53 (2026-06-21)
     - Fix #89: edit state (editingBillId + currentBill with old item assignments) now cleared on Cancel and on deleteBill — was bleeding into the next new bill upload if user had tapped Edit before deleting
     - Fix #89: cancelNewBill() function replaces goTo('home') on Cancel button — resets editingBillId, currentBill, manualItems, whoPaidManual, charges, form fields
@@ -778,7 +781,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.53</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.54</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1450,6 +1453,17 @@ function editBill(id) {
     ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(((it.price || 0) * (it.qty || 1)).toFixed(2)) }))
     : [{ name: '', qty: 1, price: '' }];
   renderManualItems();
+
+  // Restore charges state from bill to form
+  const ch = b.charges || { sc: false, vat: false, scPct: 10, vatPct: 7, discounts: [] };
+  charges.sc = ch.sc || false;
+  charges.vat = ch.vat || false;
+  ['sc','vat'].forEach(k => updateToggle(k));
+  document.querySelectorAll('#sc-pct').forEach(el => el.value = ch.scPct || 10);
+  document.querySelectorAll('#vat-pct').forEach(el => el.value = ch.vatPct || 7);
+  _ocrDiscounts = (ch.discounts || []).map(d => ({ amount: d.amt || 0, description: d.label || 'Discount' }));
+  renderOcrDiscounts();
+
   updateManualTotal();
 
   // Switch to manual entry tab and navigate
@@ -2193,6 +2207,18 @@ function goToReview(source) {
           price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
         };
       });
+      // Sync charges from form state (SC/VAT toggles + percentages + any remaining discounts)
+      const scPctEdit = parseFloat(document.getElementById('sc-pct')?.value) || 10;
+      const vatPctEdit = parseFloat(document.getElementById('vat-pct')?.value) || 7;
+      currentBill.charges = {
+        sc: charges.sc, scPct: scPctEdit,
+        vat: charges.vat, vatPct: vatPctEdit,
+        discounts: (_ocrDiscounts || []).map(d => ({
+          id: (Date.now() + Math.random()).toString(),
+          amt: d.amount || 0, label: d.description || 'Discount', assignTo: 'split',
+        })),
+      };
+      _ocrDiscounts = [];
     } else {
       // New bill
       const items = formItems.map(it => ({
