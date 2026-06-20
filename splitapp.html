@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.49 (2026-06-21)
+    - Fix: screen-newbill inline padding-bottom:20px was overriding .screen class padding — Next → button now reachable after nav became position:fixed
   v2.1.48 (2026-06-21)
     - Fix #84: nav bar now position:fixed (was position:relative in flex flow) — can no longer drift above the person/Next panel on iOS bounce scroll
     - UX: overscroll-behavior:none on .screen — prevents elastic bounce from displacing layout
@@ -756,7 +758,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.48</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.49</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -775,7 +777,7 @@ const CONFIG = {
   </div>
 
   <!-- NEW BILL: STEP 1 — CAPTURE -->
-  <div id="screen-newbill" class="screen" style="padding-bottom:20px;">
+  <div id="screen-newbill" class="screen">
     <div class="page-header">
       <div class="back-btn" onclick="goTo('home')">
         <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
