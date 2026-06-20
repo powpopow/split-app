@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.52 (2026-06-21)
+    - UX: Small refresh button (↺) added to top-right of hero balance card — spins while pulling, calls syncFromSheets()
   v2.1.51 (2026-06-21)
     - Fix #87: syncToSheets/callUpdateBill now include charges_json (SC%, VAT%, discount details persisted to Sheets)
     - Fix #87: syncFromSheets parses charges_json back into bill.charges (cross-device detail display)
@@ -541,7 +543,15 @@ const CONFIG = {
 
     <!-- Balance card -->
     <div id="balance-card" style="margin:6px 12px 10px; border-radius:14px; padding:14px 16px; background:var(--acc);">
-      <div style="font-size:10px; color:rgba(255,255,255,0.7); font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Running balance</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.7); font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Running balance</div>
+        <div id="hero-refresh-btn" onclick="refreshFromDB()" style="cursor:pointer;opacity:0.65;padding:2px;-webkit-tap-highlight-color:transparent;" title="Refresh from DB">
+          <svg id="hero-refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </div>
+      </div>
       <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:4px;">
         <div>
           <div style="font-size:32px; font-weight:600; color:white; line-height:1.1;" id="balance-amount">฿0</div>
@@ -1590,6 +1600,20 @@ async function callUpdateBill(bill) {
       }
     }),
   });
+}
+
+async function refreshFromDB() {
+  const icon = document.getElementById('hero-refresh-icon');
+  const btn = document.getElementById('hero-refresh-btn');
+  if (btn.dataset.spinning) return;
+  btn.dataset.spinning = '1';
+  icon.style.animation = 'spin 0.7s linear infinite';
+  try {
+    await syncFromSheets();
+  } finally {
+    icon.style.animation = '';
+    delete btn.dataset.spinning;
+  }
 }
 
 function showBreakdown() {
