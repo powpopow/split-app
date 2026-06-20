@@ -2,7 +2,41 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.48 (2026-06-21)
+    - Fix #84: nav bar now position:fixed (was position:relative in flex flow) — can no longer drift above the person/Next panel on iOS bounce scroll
+    - UX: overscroll-behavior:none on .screen — prevents elastic bounce from displacing layout
+    - UX #85: Assign bar redesigned — avatar pills (CJ/PP initials, "Both" with stacked avatars), step strip "① Pick a name → ② Tap items", first-visit tooltip (localStorage) guides step 1 then flips to guide step 2; dismissed after first item assigned or on tap
   v2.1.47 (2026-06-20)
+    - Remove: pull-to-refresh removed (too sensitive, fought native scroll)
+    - UX: Who paid popup repositioned higher (80px from top, full rounded corners)
+    - UX: Background behind who-paid popup now shows OCR-filled form (dimmed) instead of upload screen
+  v2.1.46 (2026-06-20)
+    - UX: Qty split opens with equal split pre-filled (ceil/floor for odd qty); tap field → selects all text so typing replaces immediately; blur without input resets to equal split
+  v2.1.45 (2026-06-20)
+    - UX: Who paid popup shown immediately after OCR scan completes — select payer before form reveals
+    - UX: Qty custom split starts blank (A=0) with total on B; typing either side auto-fills the other
+  v2.1.44 (2026-06-20)
+    - Fix: Custom/qty/amt items in Shared tab now show checkmark in purple circle (was circle only)
+    - Polish: OCR discount rows now amber/yellow background + bold "OCR" badge + dark text (was green tint)
+    - Feature: Pull-to-refresh gesture triggers syncFromSheets() (removed in v2.1.47)
+  v2.1.43 (2026-06-20)
+    - Feature: Bill detail page now shows full charges section (SC, VAT, discounts, grand total)
+    - Feature: Per-person total now shows breakdown line (items + charges − discount)
+    - Fix: saveBill() now persists subtotal, sc, vat, chargesA/B, itemsA/B, sharedDiscA/B for display
+  v2.1.42 (2026-06-20)
+    - UX: Custom split default tab now smart — qty > 1 opens Qty tab, qty = 1 opens ฿ tab, % is last
+    - Feature: Qty split now accepts decimal input (step="any"); auto-fills complement with rounding
+  v2.1.41 (2026-06-20)
+    - Polish: OCR discount rows in review page highlighted with amber background + "OCR" amber badge
+  v2.1.40 (2026-06-20)
+    - Fix: SC/VAT state now carried from manual entry into new bill (was hardcoded false on goToReview)
+    - Fix: updateToggle() uses querySelectorAll to update both manual and review page toggles simultaneously (duplicate IDs were causing visual mismatch)
+    - Fix: goToReview syncs sc-pct/vat-pct values to both pages' inputs via querySelectorAll
+  v2.1.39 (2026-06-20)
+    - Fix: OCR prompt now instructs Gemini to set vat_percent=0 when receipt says "VAT included/inclusive"
+    - Feature: OCR discounts now rendered as visible line items in manual entry charges section (amber "OCR" tag, removable with ×)
+    - Fix: OCR discounts cleared from charges UI after proceeding to review
+  v2.1.38 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -290,9 +324,9 @@ body {
 
 /* ── LAYOUT ─────────────────────────────────────────── */
 #app { height: 100dvh; display: flex; flex-direction: column; }
-.screen { display: none; flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px); }
+.screen { display: none; flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px); overscroll-behavior: none; }
 .screen.active { display: block; }
-.nav { height: calc(var(--nav-h) + var(--safe-b)); background: var(--card); border-top: 0.5px solid var(--border); display: flex; align-items: flex-start; flex-shrink: 0; padding-top: 8px; padding-bottom: var(--safe-b); position: relative; z-index: 10; }
+.nav { height: calc(var(--nav-h) + var(--safe-b)); background: var(--card); border-top: 0.5px solid var(--border); display: flex; align-items: flex-start; padding-top: 8px; padding-bottom: var(--safe-b); position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; z-index: 50; }
 .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; color: var(--text3); cursor: pointer; padding: 4px 0; transition: color 0.15s; }
 .nav-item.active { color: var(--acc); }
 .nav-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -722,7 +756,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.47</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.48</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -868,7 +902,11 @@ const CONFIG = {
     </div>
 
     <div class="sec-label">Items</div>
-    <div id="rv-assign-bar" style="display:flex;gap:8px;margin:0 14px 8px;"></div>
+    <div style="margin:0 14px 6px;">
+      <div id="rv-step-strip" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"></div>
+      <div id="rv-assign-bar" style="display:flex;gap:6px;"></div>
+      <div id="rv-assign-tooltip" style="display:none;margin-top:8px;"></div>
+    </div>
     <div class="card" style="margin-top:0;position:relative;z-index:10;overflow:visible;">
       <div id="review-items"></div>
     </div>
@@ -2134,16 +2172,53 @@ function goToReview(source) {
 function renderAssignBar() {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
+
+  // Step strip
+  const strip = document.getElementById('rv-step-strip');
+  if (strip) {
+    const done = assignMode !== null;
+    strip.innerHTML = `
+      <div style="width:16px;height:16px;border-radius:50%;${done ? 'background:var(--border);color:var(--text3);' : 'background:var(--acc);color:white;'}font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${done ? '✓' : '1'}</div>
+      <span style="font-size:12px;font-weight:${done ? '400' : '500'};color:${done ? 'var(--text3)' : 'var(--text)'};">Pick a name</span>
+      <span style="font-size:10px;color:var(--text3);margin:0 1px;">→</span>
+      <div style="width:16px;height:16px;border-radius:50%;${done ? 'background:var(--acc);color:white;' : 'border:1.5px solid var(--acc);color:var(--acc);'}font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+      <span style="font-size:12px;font-weight:${done ? '600' : '400'};color:${done ? 'var(--text)' : 'var(--text3)'};">Tap items</span>`;
+  }
+
+  // Pills
   const bar = document.getElementById('rv-assign-bar');
   if (!bar) return;
-  const btn = (mode, label, activeColor, activeBg) => {
+  const avA = `<div style="width:18px;height:18px;border-radius:50%;background:#2E3250;color:white;font-size:8px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">CJ</div>`;
+  const avB = `<div style="width:18px;height:18px;border-radius:50%;background:#5B8FD4;color:white;font-size:8px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">PP</div>`;
+  const avBoth = `<div style="display:flex;flex-shrink:0;"><div style="width:13px;height:13px;border-radius:50%;background:#2E3250;margin-right:-4px;border:1.5px solid var(--card);z-index:1;position:relative;"></div><div style="width:13px;height:13px;border-radius:50%;background:#5B8FD4;border:1.5px solid var(--card);"></div></div>`;
+  const pill = (mode, label, av, borderCol, bgCol, textCol) => {
     const active = assignMode === mode;
-    return `<div onclick="setAssignMode('${mode}')" style="flex:1;text-align:center;padding:7px 0;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid ${active ? activeColor : 'var(--border)'};background:${active ? activeBg : 'var(--card)'};color:${active ? activeColor : 'var(--text2)'};">${label}</div>`;
+    const dimmed = assignMode && assignMode !== mode;
+    return `<div onclick="setAssignMode('${mode}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 0;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity 0.15s;border:${active ? '2px' : '1.5px'} solid ${active ? borderCol : 'var(--border)'};background:${active ? bgCol : 'var(--card)'};color:${active ? textCol : 'var(--text2)'};opacity:${dimmed ? '0.4' : '1'};">${av}${label}</div>`;
   };
   bar.innerHTML =
-    btn('a', nameA, 'var(--acc)', 'var(--acc-light)') +
-    btn('b', nameB, '#a0623a', '#FFF0E6') +
-    btn('shared', 'Shared', '#666', '#f0f0f0');
+    pill('a',      nameA,  avA,    'var(--acc)', 'var(--acc-light)', 'var(--acc-text)') +
+    pill('b',      nameB,  avB,    '#a0623a',    '#FFF0E6',          '#a0623a') +
+    pill('shared', 'Both', avBoth, '#555',        '#f0f0f0',          '#555');
+
+  updateAssignTooltip();
+}
+
+function updateAssignTooltip() {
+  const el = document.getElementById('rv-assign-tooltip');
+  if (!el) return;
+  if (localStorage.getItem('sa_assign_tooltip_done')) { el.style.display = 'none'; return; }
+  const nameA = CONFIG.personA || 'A';
+  const nameB = CONFIG.personB || 'B';
+  const personName = assignMode === 'a' ? nameA : assignMode === 'b' ? nameB : 'both';
+  const ttStyle = 'background:#2a3a38;color:white;font-size:12px;padding:8px 12px;border-radius:10px;text-align:center;line-height:1.4;position:relative;cursor:pointer;';
+  if (assignMode === null) {
+    el.style.display = 'block';
+    el.innerHTML = `<div style="${ttStyle}" onclick="localStorage.setItem('sa_assign_tooltip_done','1');updateAssignTooltip();"><div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:5px solid #2a3a38;"></div>Tap a name to start assigning items</div>`;
+  } else {
+    el.style.display = 'block';
+    el.innerHTML = `<div style="${ttStyle}" onclick="localStorage.setItem('sa_assign_tooltip_done','1');updateAssignTooltip();"><div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #2a3a38;"></div>Now tap items to assign to ${personName}</div>`;
+  }
 }
 
 function setAssignMode(mode) {
@@ -2165,6 +2240,10 @@ function toggleItemAssign(i, event) {
   } else {
     it.assignment = assignMode;
     if (assignMode === 'shared') { it.splitA = 50; it.splitB = 50; }
+  }
+  if (!localStorage.getItem('sa_assign_tooltip_done')) {
+    localStorage.setItem('sa_assign_tooltip_done', '1');
+    updateAssignTooltip();
   }
   renderReviewItems();
   renderPersonBoxes();
