@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.34 (2026-06-20)
+  v2.1.36 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.34</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.36</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1339,17 +1339,21 @@ function editBill(id) {
   if (!b) return;
   editingBillId = id;
 
+  // Deep copy preserving all assignments, splits, charges
+  currentBill = JSON.parse(JSON.stringify(b));
+
   // Pre-fill form fields
   document.getElementById('bill-date').value = b.date || '';
   document.getElementById('bill-place').value = b.place || '';
   document.getElementById('bill-category').value = b.category || '';
   setWhoPaid('manual', b.paidBy || 'a');
 
-  // Pre-fill items
+  // Pre-fill items for the form (name/qty/price only — assignments preserved in currentBill)
   manualItems = (b.items && b.items.length)
     ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(((it.price || 0) * (it.qty || 1)).toFixed(2)) }))
     : [{ name: '', qty: 1, price: '' }];
   renderManualItems();
+  updateManualTotal();
 
   // Switch to manual entry tab and navigate
   goTo('newbill');
@@ -1375,9 +1379,20 @@ function showBillDetail(id) {
       } else if (it.assignment === 'b') {
         assign = `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`;
       } else {
-        assign = `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">Shared</span>`;
-        const amtA = total * splitA / 100;
-        const amtB = total * splitB / 100;
+        let chipLabel = 'Shared', amtA = 0, amtB = 0;
+        if (it.assignment === 'qty') {
+          amtA = it.price * (it.qtyA || 0);
+          amtB = it.price * (it.qtyB || 0);
+          chipLabel = `${it.qtyA||0}/${it.qtyB||0} qty`;
+        } else if (it.assignment === 'amt') {
+          amtA = it.amtA || 0;
+          amtB = it.amtB || 0;
+          chipLabel = 'Custom';
+        } else {
+          amtA = total * (splitA / 100);
+          amtB = total * (splitB / 100);
+        }
+        assign = `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">${chipLabel}</span>`;
         breakdown = `<div style="font-size:11px;color:var(--text3);margin-top:2px;">${nameA} ${fmt(amtA)} · ${nameB} ${fmt(amtB)}</div>`;
       }
       return `<div class="card-row" style="align-items:flex-start;">
@@ -1936,20 +1951,40 @@ function goToReview(source) {
     const place = document.getElementById('bill-place').value.trim();
     const date = document.getElementById('bill-date').value;
     const category = document.getElementById('bill-category').value;
-    const items = manualItems.filter(it => it.name || it.price).map(it => ({
-      name: it.name || 'Item',
-      qty: parseInt(it.qty) || 1,
-      price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
-      assignment: 'shared',
-      splitA: 50,
-      splitB: 50,
-    }));
-    if (!items.length) { alert('Add at least one item.'); return; }
+    const formItems = manualItems.filter(it => it.name || it.price);
+    if (!formItems.length) { alert('Add at least one item.'); return; }
     if (!whoPaidManual) { alert('Please select who paid.'); return; }
-    const ocrDiscEntries = _ocrDiscounts.map(d => ({ id: Date.now() + Math.random(), amt: d.amount, label: d.description || 'Discount', assignTo: 'split', fromOcr: true }));
-    currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
-    _ocrReceiptTotal = null;
-    _ocrDiscounts = [];
+
+    if (editingBillId && currentBill) {
+      // Editing: merge form fields into existing bill, preserving all item assignments
+      currentBill.date = date;
+      currentBill.place = place;
+      currentBill.category = category;
+      currentBill.paidBy = whoPaidManual;
+      currentBill.items = formItems.map((it, i) => {
+        const existing = (currentBill.items || [])[i] || { assignment: 'shared', splitA: 50, splitB: 50 };
+        return {
+          ...existing,
+          name: it.name || 'Item',
+          qty: parseInt(it.qty) || 1,
+          price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
+        };
+      });
+    } else {
+      // New bill
+      const items = formItems.map(it => ({
+        name: it.name || 'Item',
+        qty: parseInt(it.qty) || 1,
+        price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
+        assignment: 'shared',
+        splitA: 50,
+        splitB: 50,
+      }));
+      const ocrDiscEntries = _ocrDiscounts.map(d => ({ id: Date.now() + Math.random(), amt: d.amount, label: d.description || 'Discount', assignTo: 'split', fromOcr: true }));
+      currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
+      _ocrReceiptTotal = null;
+      _ocrDiscounts = [];
+    }
   }
 
   // Sync charge toggles from currentBill
