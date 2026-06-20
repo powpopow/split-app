@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.57 (2026-06-21)
+    - Feature: History tab month picker — "Month" chip opens year nav + month grid dropdown; chip label updates to selected month (e.g. "Jun 2026"); dropdown closes on nav away
   v2.1.56 (2026-06-21)
     - Feature: Clear cache button in Settings → About — zeros local bills state then re-syncs from Sheets; config and login untouched
     - UX: Assign bar tooltip now always visible (removed localStorage dismissal) — shows "Tap a name" or "Now tap items" based on current step
@@ -609,9 +611,20 @@ const CONFIG = {
       <div class="page-title">History</div>
       <div id="history-avatars"></div>
     </div>
-    <div style="display:flex; gap:6px; padding:0 12px 8px; overflow-x:auto; scrollbar-width:none;">
-      <div class="chip chip-a" style="white-space:nowrap;" onclick="filterHistory('all')" id="hf-all">All time</div>
-      <div class="chip chip-shared" style="white-space:nowrap;" onclick="filterHistory('month')" id="hf-month">This month</div>
+    <div style="position:relative;">
+      <div style="display:flex; gap:6px; padding:0 12px 8px;">
+        <div class="chip chip-a"      onclick="filterHistory('all')"   id="hf-all"   style="flex:1;justify-content:center;padding:6px 10px;">All time</div>
+        <div class="chip chip-shared" onclick="filterHistory('month')" id="hf-month" style="flex:1;justify-content:center;padding:6px 10px;"><span style="flex:1;text-align:center;padding-left:14px;">Month</span><span style="font-size:9px;opacity:0.65;width:14px;text-align:center;">▾</span></div>
+      </div>
+      <!-- MONTH dropdown: year nav + month grid -->
+      <div id="hf-month-dd" style="display:none; position:absolute; top:100%; left:12px; right:12px; background:var(--bg); border:0.5px solid var(--border); border-radius:16px; z-index:200; box-shadow:0 4px 24px rgba(0,0,0,.14); overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:0.5px solid var(--border);">
+          <div onclick="changeHistoryDdYear(-1)" id="hf-yr-prev" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">‹</div>
+          <div id="hf-yr-label" style="font-size:15px;font-weight:600;"></div>
+          <div onclick="changeHistoryDdYear(1)"  id="hf-yr-next" style="width:32px;height:32px;border-radius:50%;border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text2);">›</div>
+        </div>
+        <div id="hf-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:12px;"></div>
+      </div>
     </div>
     <div id="history-list"></div>
   </div>
@@ -788,7 +801,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.56</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.57</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1255,6 +1268,8 @@ let summaryYear = null;
 let summaryBarIdx = -1;
 let _summaryBarData = [];
 let historyFilter = 'all';
+let historySelectedMonth = new Date().toISOString().slice(0,7);
+let historyMonthDdYear = new Date().getFullYear();
 let whoPaidManual = null;
 let editingBillId = null;
 let _ocrReceiptTotal = null;
@@ -1319,6 +1334,7 @@ function goTo(screen) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const navEl = document.getElementById('nav-' + screen);
   if (navEl) navEl.classList.add('active');
+  if (screen !== 'history') closeHistoryDd();
   if (screen === 'home') renderHome();
   if (screen === 'history') renderHistory();
   if (screen === 'summary') renderSummary();
@@ -1707,15 +1723,84 @@ function shareBalance() {
 }
 
 // ── HISTORY ──────────────────────────────────────────
+function closeHistoryDd() {
+  const dd = document.getElementById('hf-month-dd');
+  if (dd) dd.style.display = 'none';
+}
+
 function filterHistory(f) {
+  // Second tap on active 'month' filter → toggle dropdown
+  if (historyFilter === f && f === 'month') {
+    const dd = document.getElementById('hf-month-dd');
+    if (dd && dd.style.display !== 'none') { closeHistoryDd(); return; }
+    renderHistoryMonthDd();
+    if (dd) dd.style.display = 'block';
+    return;
+  }
+  closeHistoryDd();
+  if (f === 'month') {
+    historySelectedMonth = new Date().toISOString().slice(0,7);
+    historyMonthDdYear = new Date().getFullYear();
+    renderHistoryMonthDd();
+    document.getElementById('hf-month-dd').style.display = 'block';
+  }
   historyFilter = f;
-  document.getElementById('hf-all').className = 'chip ' + (f==='all' ? 'chip-a' : 'chip-shared');
-  document.getElementById('hf-month').className = 'chip ' + (f==='month' ? 'chip-a' : 'chip-shared');
+  updateHistoryChipLabels();
   renderHistory();
+}
+
+function updateHistoryChipLabels() {
+  const allEl = document.getElementById('hf-all');
+  const monEl = document.getElementById('hf-month');
+  if (allEl) allEl.className = 'chip ' + (historyFilter==='all' ? 'chip-a' : 'chip-shared');
+  if (monEl) {
+    monEl.className = 'chip ' + (historyFilter==='month' ? 'chip-a' : 'chip-shared');
+    const label = historyFilter === 'month'
+      ? new Date(historySelectedMonth+'-02').toLocaleDateString('en-GB',{month:'short',year:'numeric'})
+      : 'Month';
+    monEl.style.cssText = 'flex:1;justify-content:center;padding:6px 10px;';
+    monEl.innerHTML = `<span style="flex:1;text-align:center;padding-left:14px;">${label}</span><span style="font-size:9px;opacity:0.65;width:14px;text-align:center;">▾</span>`;
+  }
+}
+
+function renderHistoryMonthDd() {
+  const now = new Date();
+  const yr = historyMonthDdYear;
+  const minYr = getMinBillYear();
+  document.getElementById('hf-yr-label').textContent = yr;
+  const nextEl = document.getElementById('hf-yr-next');
+  const prevEl = document.getElementById('hf-yr-prev');
+  if (nextEl) { nextEl.style.opacity = yr >= now.getFullYear() ? '0.3' : '1'; nextEl.style.pointerEvents = yr >= now.getFullYear() ? 'none' : 'auto'; }
+  if (prevEl) { prevEl.style.opacity = yr <= minYr ? '0.3' : '1'; prevEl.style.pointerEvents = yr <= minYr ? 'none' : 'auto'; }
+  const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('hf-month-grid').innerHTML = mNames.map((m, i) => {
+    const key = `${yr}-${String(i+1).padStart(2,'0')}`;
+    const isFuture = new Date(yr, i, 1) > now;
+    const isSel = key === historySelectedMonth && historyFilter === 'month';
+    return `<div onclick="${isFuture ? '' : `selectHistoryMonth('${key}')`}" style="padding:10px 4px;text-align:center;border-radius:10px;font-size:14px;cursor:${isFuture?'default':'pointer'};color:${isSel?'white':isFuture?'var(--text3)':'var(--text)'};background:${isSel?'var(--acc)':'transparent'};opacity:${isFuture?0.35:1};">${m}</div>`;
+  }).join('');
+}
+
+function selectHistoryMonth(key) {
+  historySelectedMonth = key;
+  historyFilter = 'month';
+  closeHistoryDd();
+  updateHistoryChipLabels();
+  renderHistory();
+}
+
+function changeHistoryDdYear(dir) {
+  const now = new Date();
+  const newYr = historyMonthDdYear + dir;
+  if (newYr > now.getFullYear()) return;
+  if (newYr < getMinBillYear()) return;
+  historyMonthDdYear = newYr;
+  renderHistoryMonthDd();
 }
 
 function renderHistory() {
   // Avatar toggle — same as home
+  updateHistoryChipLabels();
   const nameA = CONFIG.personA || 'Person A';
   const nameB = CONFIG.personB || 'Person B';
   const otherWho = currentUser === 'b' ? 'a' : 'b';
@@ -1730,9 +1815,8 @@ function renderHistory() {
     <div class="avatar ${meAv}" style="position:absolute;right:0;z-index:2;box-shadow:0 0 0 2px var(--bg);">${meInit}</div>
   </div>`;
 
-  const thisMonth = new Date().toISOString().slice(0, 7);
   let bills = [...state.bills].reverse();
-  if (historyFilter === 'month') bills = bills.filter(b => b.date && b.date.slice(0,7) === thisMonth);
+  if (historyFilter === 'month') bills = bills.filter(b => b.date && b.date.slice(0,7) === historySelectedMonth);
 
   const list = document.getElementById('history-list');
   if (!bills.length) {
