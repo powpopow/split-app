@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.40 (2026-06-20)
+  v2.1.42 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.40</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.42</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1059,7 +1059,7 @@ const CONFIG = {
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-a-qty-label">A</div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <input type="number" id="csp-a-qty" min="0" value="0" style="width:70px;" oninput="syncQty('a')">
+            <input type="number" id="csp-a-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('a')">
             <span style="font-size:12px;color:var(--text3);">units</span>
           </div>
         </div>
@@ -1067,7 +1067,7 @@ const CONFIG = {
         <div style="flex:1;">
           <div style="font-size:12px;color:var(--text2);margin-bottom:4px;" id="csp-b-qty-label">B</div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <input type="number" id="csp-b-qty" min="0" value="0" style="width:70px;" oninput="syncQty('b')">
+            <input type="number" id="csp-b-qty" min="0" step="any" value="0" style="width:70px;" oninput="syncQty('b')">
             <span style="font-size:12px;color:var(--text3);">units</span>
           </div>
         </div>
@@ -2230,14 +2230,18 @@ function openCustomSplit(i) {
   document.getElementById('csp-pct-total').textContent = fmt(totalAmt);
   document.getElementById('csp-qty-total').textContent = totalQty;
   document.getElementById('csp-amt-total').textContent = fmt(totalAmt);
-  // Pre-select mode based on current assignment
-  const mode = it.assignment === 'qty' ? 'qty' : it.assignment === 'amt' ? 'amt' : 'pct';
+  // Pre-select mode: honour existing assignment; for fresh items pick smartly by qty
+  let mode;
+  if (it.assignment === 'qty') mode = 'qty';
+  else if (it.assignment === 'amt') mode = 'amt';
+  else if (it.assignment === 'custom') mode = 'pct';
+  else mode = totalQty > 1 ? 'qty' : 'amt'; // smart default
   // Pre-fill values
   document.getElementById('csp-a-pct').value = it.splitA || 50;
   document.getElementById('csp-b-pct').value = it.splitB || 50;
-  const aQty = it.qtyA != null ? it.qtyA : Math.floor(totalQty / 2);
+  const aQty = it.qtyA != null ? it.qtyA : Math.ceil(totalQty / 2);
   document.getElementById('csp-a-qty').value = aQty;
-  document.getElementById('csp-b-qty').value = totalQty - aQty;
+  document.getElementById('csp-b-qty').value = Math.round((totalQty - aQty) * 100) / 100;
   const aAmt = it.amtA != null ? it.amtA : Math.round(totalAmt / 2 * 100) / 100;
   document.getElementById('csp-a-amt').value = aAmt;
   document.getElementById('csp-b-amt').value = Math.round((totalAmt - aAmt) * 100) / 100;
@@ -2277,8 +2281,8 @@ function syncQty(side) {
   const totalQty = it ? (it.qty || 1) : 1;
   const aEl = document.getElementById('csp-a-qty');
   const bEl = document.getElementById('csp-b-qty');
-  if (side === 'a') { const a = Math.min(totalQty, Math.max(0, parseInt(aEl.value)||0)); aEl.value = a; bEl.value = totalQty - a; }
-  else { const b = Math.min(totalQty, Math.max(0, parseInt(bEl.value)||0)); bEl.value = b; aEl.value = totalQty - b; }
+  if (side === 'a') { const a = Math.min(totalQty, Math.max(0, parseFloat(aEl.value)||0)); aEl.value = a; bEl.value = Math.round((totalQty - a) * 100) / 100; }
+  else { const b = Math.min(totalQty, Math.max(0, parseFloat(bEl.value)||0)); bEl.value = b; aEl.value = Math.round((totalQty - b) * 100) / 100; }
   updateCustomPreview();
 }
 
@@ -2300,7 +2304,7 @@ function updateCustomPreview() {
   const total = it.price * (it.qty || 1);
   let pA = 0, pB = 0;
   if (currentCustomMode === 'pct') { const a = parseInt(document.getElementById('csp-a-pct').value)||50; pA = total*a/100; pB = total*(100-a)/100; }
-  else if (currentCustomMode === 'qty') { pA = it.price*(parseInt(document.getElementById('csp-a-qty').value)||0); pB = it.price*(parseInt(document.getElementById('csp-b-qty').value)||0); }
+  else if (currentCustomMode === 'qty') { pA = it.price*(parseFloat(document.getElementById('csp-a-qty').value)||0); pB = it.price*(parseFloat(document.getElementById('csp-b-qty').value)||0); }
   else { pA = parseFloat(document.getElementById('csp-a-amt').value)||0; pB = parseFloat(document.getElementById('csp-b-amt').value)||0; }
   document.getElementById('csp-preview').textContent = nameA+': '+fmt(pA)+'  ·  '+nameB+': '+fmt(pB);
 }
@@ -2311,8 +2315,8 @@ function applyCustomSplit() {
     const a = parseInt(document.getElementById('csp-a-pct').value) || 50;
     it.splitA = a; it.splitB = 100 - a; it.assignment = 'custom';
   } else if (currentCustomMode === 'qty') {
-    it.qtyA = parseInt(document.getElementById('csp-a-qty').value)||0;
-    it.qtyB = parseInt(document.getElementById('csp-b-qty').value)||0;
+    it.qtyA = parseFloat(document.getElementById('csp-a-qty').value)||0;
+    it.qtyB = parseFloat(document.getElementById('csp-b-qty').value)||0;
     it.assignment = 'qty';
   } else {
     it.amtA = parseFloat(document.getElementById('csp-a-amt').value)||0;
@@ -2652,8 +2656,9 @@ function renderSharedDiscounts() {
   }
   if (!discs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:2px 14px 6px;">None</div>'; return; }
   el.innerHTML = discs.map(d => `
-    <div style="display:flex;align-items:center;padding:6px 14px;cursor:pointer;border-top:0.5px solid var(--border);" onclick="editDisc('${d.id}','shared')">
+    <div style="display:flex;align-items:center;padding:6px 14px;cursor:pointer;border-top:0.5px solid var(--border);${d.fromOcr ? 'background:rgba(15,110,86,0.06);' : ''}" onclick="editDisc('${d.id}','shared')">
       <div style="flex:1;min-width:0;">
+        ${d.fromOcr ? '<span style="font-size:10px;font-weight:600;color:var(--acc);margin-right:6px;letter-spacing:0.3px;">OCR</span>' : ''}
         <span style="font-size:13px;font-weight:500;">${d.label || 'Voucher'}</span>
         <span style="font-size:12px;color:var(--text3);margin-left:6px;">−${fmt(d.amt)} · ${splitShort(d.assignTo)}</span>
       </div>
