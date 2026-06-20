@@ -2,6 +2,13 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.56 (2026-06-21)
+    - Feature: Clear cache button in Settings → About — zeros local bills state then re-syncs from Sheets; config and login untouched
+    - UX: Assign bar tooltip now always visible (removed localStorage dismissal) — shows "Tap a name" or "Now tap items" based on current step
+    - UX: Photo upload / Manual entry tab switcher hidden in edit mode — restored on save or cancel
+  v2.1.55 (2026-06-21)
+    - Fix #91: newbill page title now shows "Edit bill" when editing (was always "New bill")
+    - Fix #92: review Back button now returns to manual entry tab (was landing on photo upload tab)
   v2.1.54 (2026-06-21)
     - Fix #90: editBill() now restores SC/VAT toggles, percentages, and discounts to the manual entry form
     - Fix #90: goToReview() edit branch now syncs charges from form state back into currentBill.charges (SC/VAT/discounts editable during edit)
@@ -781,7 +788,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.54</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.56</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -790,6 +797,10 @@ const CONFIG = {
       <div class="card-row" onclick="forceRefresh()" style="cursor:pointer;">
         <div class="row-label">Sync &amp; refresh</div>
         <div class="row-val"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></div>
+      </div>
+      <div class="card-row" onclick="clearLocalCache()" style="cursor:pointer;">
+        <div class="row-label">Clear cache</div>
+        <div class="row-val" id="clear-cache-val"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></div>
       </div>
       <div class="card-row">
         <div class="row-label">Receipt OCR</div>
@@ -806,7 +817,7 @@ const CONFIG = {
         <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
         Cancel
       </div>
-      <div class="page-title">New bill</div>
+      <div class="page-title" id="newbill-page-title">New bill</div>
     </div>
 
     <div class="pill-tabs">
@@ -907,7 +918,7 @@ const CONFIG = {
   <!-- NEW BILL: STEP 2 — REVIEW & ASSIGN -->
   <div id="screen-review" class="screen" style="padding-bottom:240px;">
     <div class="page-header">
-      <div class="back-btn" onclick="goTo('newbill')">
+      <div class="back-btn" onclick="goTo('newbill');switchBillTab('manual');">
         <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
         Back
       </div>
@@ -1420,6 +1431,8 @@ function cancelNewBill() {
   // Clear all edit/new-bill state so it can't bleed into the next upload session
   editingBillId = null;
   currentBill = {};
+  const titleEl = document.getElementById('newbill-page-title');
+  if (titleEl) titleEl.textContent = 'New bill';
   whoPaidManual = null;
   charges = { sc: false, vat: false };
   _ocrReceiptTotal = null;
@@ -1431,6 +1444,8 @@ function cancelNewBill() {
   ['sc','vat'].forEach(k => updateToggle(k));
   clearPlaceOcrNote();
   renderOcrDiscounts();
+  const pillTabs = document.querySelector('.pill-tabs');
+  if (pillTabs) pillTabs.style.display = '';
   goTo('home');
 }
 
@@ -1466,7 +1481,11 @@ function editBill(id) {
 
   updateManualTotal();
 
-  // Switch to manual entry tab and navigate
+  // Switch to manual entry tab and navigate; hide tab switcher in edit mode
+  const titleEl = document.getElementById('newbill-page-title');
+  if (titleEl) titleEl.textContent = 'Edit bill';
+  const pillTabs = document.querySelector('.pill-tabs');
+  if (pillTabs) pillTabs.style.display = 'none';
   goTo('newbill');
   switchBillTab('manual');
 }
@@ -2313,17 +2332,16 @@ function renderAssignBar() {
 function updateAssignTooltip() {
   const el = document.getElementById('rv-assign-tooltip');
   if (!el) return;
-  if (localStorage.getItem('sa_assign_tooltip_done')) { el.style.display = 'none'; return; }
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
   const personName = assignMode === 'a' ? nameA : assignMode === 'b' ? nameB : 'both';
-  const ttStyle = 'background:#2a3a38;color:white;font-size:12px;padding:8px 12px;border-radius:10px;text-align:center;line-height:1.4;position:relative;cursor:pointer;';
+  const ttStyle = 'background:#2a3a38;color:white;font-size:12px;padding:8px 12px;border-radius:10px;text-align:center;line-height:1.4;position:relative;';
   if (assignMode === null) {
     el.style.display = 'block';
-    el.innerHTML = `<div style="${ttStyle}" onclick="localStorage.setItem('sa_assign_tooltip_done','1');updateAssignTooltip();"><div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:5px solid #2a3a38;"></div>Tap a name to start assigning items</div>`;
+    el.innerHTML = `<div style="${ttStyle}"><div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:5px solid #2a3a38;"></div>Tap a name to start assigning items</div>`;
   } else {
     el.style.display = 'block';
-    el.innerHTML = `<div style="${ttStyle}" onclick="localStorage.setItem('sa_assign_tooltip_done','1');updateAssignTooltip();"><div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #2a3a38;"></div>Now tap items to assign to ${personName}</div>`;
+    el.innerHTML = `<div style="${ttStyle}"><div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #2a3a38;"></div>Now tap items to assign to ${personName}</div>`;
   }
 }
 
@@ -2346,10 +2364,6 @@ function toggleItemAssign(i, event) {
   } else {
     it.assignment = assignMode;
     if (assignMode === 'shared') { it.splitA = 50; it.splitB = 50; }
-  }
-  if (!localStorage.getItem('sa_assign_tooltip_done')) {
-    localStorage.setItem('sa_assign_tooltip_done', '1');
-    updateAssignTooltip();
   }
   renderReviewItems();
   renderPersonBoxes();
@@ -3061,6 +3075,10 @@ async function saveBill() {
   document.getElementById('bill-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('bill-category').value = '';
   clearPlaceOcrNote();
+  const titleEl = document.getElementById('newbill-page-title');
+  if (titleEl) titleEl.textContent = 'New bill';
+  const pillTabsEl = document.querySelector('.pill-tabs');
+  if (pillTabsEl) pillTabsEl.style.display = '';
 
   goTo('home');
 }
@@ -3600,6 +3618,21 @@ async function fetchConfigFromSheet() {
 }
 
 // ── FORCE REFRESH ─────────────────────────────────────
+async function clearLocalCache() {
+  if (!confirm('Clear local bill data and re-sync from Sheets?\n\nYour login and settings will not be affected.')) return;
+  const el = document.getElementById('clear-cache-val');
+  if (el) el.style.opacity = '0.4';
+  // Zero out local bills state only — keep config and user session
+  state = { bills: [], runningBalance: 0 };
+  localStorage.setItem('splitapp_state', JSON.stringify(state));
+  // Re-pull everything from Sheets
+  await syncFromSheets();
+  await fetchConfigFromSheet();
+  renderHome();
+  if (el) el.style.opacity = '';
+  alert('Cache cleared and data refreshed from Sheets.');
+}
+
 async function forceRefresh() {
   const el = document.querySelector('[onclick="forceRefresh()"] .row-val');
   if (el) el.style.opacity = '0.4';
