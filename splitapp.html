@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.36 (2026-06-20)
+  v2.1.38 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.36</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.38</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1379,28 +1379,39 @@ function showBillDetail(id) {
       } else if (it.assignment === 'b') {
         assign = `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`;
       } else {
-        let chipLabel = 'Shared', amtA = 0, amtB = 0;
+        let labelA = nameA, labelB = nameB, amtA = 0, amtB = 0;
         if (it.assignment === 'qty') {
           amtA = it.price * (it.qtyA || 0);
           amtB = it.price * (it.qtyB || 0);
-          chipLabel = `${it.qtyA||0}/${it.qtyB||0} qty`;
+          labelA = `${nameA} ×${it.qtyA||0}`;
+          labelB = `${nameB} ×${it.qtyB||0}`;
         } else if (it.assignment === 'amt') {
           amtA = it.amtA || 0;
           amtB = it.amtB || 0;
-          chipLabel = 'Custom';
-        } else {
+        } else if (it.assignment === 'custom') {
           amtA = total * (splitA / 100);
           amtB = total * (splitB / 100);
+          labelA = `${nameA} ${splitA}%`;
+          labelB = `${nameB} ${splitB}%`;
+        } else {
+          amtA = total * 0.5;
+          amtB = total * 0.5;
         }
-        assign = `<span class="chip chip-shared" style="font-size:10px;padding:2px 7px;">${chipLabel}</span>`;
-        breakdown = `<div style="font-size:11px;color:var(--text3);margin-top:2px;">${nameA} ${fmt(amtA)} · ${nameB} ${fmt(amtB)}</div>`;
+        assign = '';
+        breakdown = `
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:4px;padding:0 2px;">
+            <span>${labelA}</span><span>${fmt(amtA)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:1px;padding:0 2px;">
+            <span>${labelB}</span><span>${fmt(amtB)}</span>
+          </div>`;
       }
-      return `<div class="card-row" style="align-items:flex-start;">
-        <div style="flex:1;min-width:0;">
+      return `<div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
-          ${breakdown}
+          <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(total)}</span></div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;padding-top:1px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(total)}</span></div>
+        ${breakdown}
       </div>`;
     }).join('');
   } else {
