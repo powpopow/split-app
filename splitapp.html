@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.39 (2026-06-20)
+  v2.1.40 (2026-06-20)
     - Fix: Cost Breakdown net amount now shows – prefix for negative values (e.g. –฿138.14)
     - Feature: History page avatar toggle — stacked avatars top-right, tapping switches perspective and re-renders balance signs
   v2.1.25 (2026-06-16)
@@ -721,7 +721,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.39</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.40</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -2019,7 +2019,9 @@ function goToReview(source) {
         splitB: 50,
       }));
       const ocrDiscEntries = _ocrDiscounts.map(d => ({ id: Date.now() + Math.random(), amt: d.amount, label: d.description || 'Discount', assignTo: 'split', fromOcr: true }));
-      currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc:false, scPct:10, vat:false, vatPct:7, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
+      const scPctVal = parseFloat(document.getElementById('sc-pct')?.value) || 10;
+      const vatPctVal = parseFloat(document.getElementById('vat-pct')?.value) || 7;
+      currentBill = { id: Date.now().toString(), date, place, category, items, charges: { sc: charges.sc, scPct: scPctVal, vat: charges.vat, vatPct: vatPctVal, discounts: ocrDiscEntries }, paidBy: whoPaidManual, receiptTotal: _ocrReceiptTotal };
       _ocrReceiptTotal = null;
       _ocrDiscounts = [];
       renderOcrDiscounts();
@@ -2038,8 +2040,8 @@ function goToReview(source) {
     charges[k] = ch[k] || false;
     updateToggle(k);
   });
-  if (ch.scPct) document.getElementById('sc-pct').value = ch.scPct;
-  if (ch.vatPct) document.getElementById('vat-pct').value = ch.vatPct;
+  document.querySelectorAll('#sc-pct').forEach(el => el.value = ch.scPct || 10);
+  document.querySelectorAll('#vat-pct').forEach(el => el.value = ch.vatPct || 7);
 
   // Payer
   const nameA = CONFIG.personA || 'Person A';
@@ -2330,10 +2332,12 @@ function toggleCharge(key) {
 }
 
 function updateToggle(key) {
-  const el = document.getElementById('toggle-' + key);
-  if (el) el.className = 'toggle' + (charges[key] ? ' on' : '');
-  const inp = document.getElementById(key + '-input');
-  if (inp) inp.style.display = charges[key] ? 'flex' : 'none';
+  document.querySelectorAll('#toggle-' + key).forEach(el => {
+    el.className = 'toggle' + (charges[key] ? ' on' : '');
+  });
+  document.querySelectorAll('#' + key + '-input').forEach(inp => {
+    inp.style.display = charges[key] ? 'flex' : 'none';
+  });
 }
 
 // ── RECALCULATE ───────────────────────────────────────
