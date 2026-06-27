@@ -2,6 +2,19 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.65 (2026-06-27)
+    - Feature #101: Per-item discount support. Items can have optional discount + discountLabel fields.
+    - OCR prompt updated to associate item-level discounts with items (discount lines below items on receipt).
+    - Manual form shows per-item discount as amber OCR tag, removable with ×.
+    - Assign page shows per-item discount as green line under item price.
+    - recalc() handles per-item discounts: reduces effective item price (pre-tax), follows item assignment to person.
+    - Person boxes on review page show "Item disc −฿X" when applicable.
+    - Bill detail + confirm page show per-item discounts inline with items and in breakdown.
+    - saveBill() persists itemDiscA/B.
+  v2.1.64 (2026-06-27)
+    - Fix #100: Bill detail discount rows now show ownership label (e.g. "Discount (Powpow only)", "Voucher (50/50)")
+    - Fix #99: Confirm page + bill detail per-person breakdown now shows "− disc" when personalDisc or sharedDisc > 0
+    - Fix #99: saveBill() now persists personalDiscA/B alongside sharedDiscA/B
   v2.1.63 (2026-06-27)
     - Fix #98: Edit bill now preserves per-person discount assignments. editBill() only loads bill-level discounts (split/prop/fixed) into OCR form rows; per-person discounts (assignTo 'a'/'b') stay in currentBill.charges.discounts. goToReview() edit branch merges preserved per-person discounts with form-edited bill-level discounts instead of rebuilding all as 'split'.
   v2.1.62 (2026-06-21)
@@ -821,7 +834,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.63</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.65</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1512,8 +1525,8 @@ function editBill(id) {
 
   // Pre-fill items for the form (name/qty/price only — assignments preserved in currentBill)
   manualItems = (b.items && b.items.length)
-    ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(((it.price || 0) * (it.qty || 1)).toFixed(2)) }))
-    : [{ name: '', qty: 1, price: '' }];
+    ? b.items.map(it => ({ name: it.name || '', qty: it.qty || 1, price: String(((it.price || 0) * (it.qty || 1)).toFixed(2)), discount: it.discount || 0, discountLabel: it.discountLabel || '' }))
+    : [{ name: '', qty: 1, price: '', discount: 0, discountLabel: '' }];
   renderManualItems();
 
   // Restore charges state from bill to form
@@ -1587,11 +1600,15 @@ function showBillDetail(id) {
             <span>${labelB}</span><span>${fmt(amtB)}</span>
           </div>`;
       }
+      const discLine = it.discount ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--grn,#2a9d5c);margin-top:2px;padding:0 2px;">
+        <span>${it.discountLabel || 'Discount'}</span><span>−${fmt(it.discount)}</span>
+      </div>` : '';
       return `<div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
           <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(total)}</span></div>
         </div>
+        ${discLine}
         ${breakdown}
       </div>`;
     }).join('');
@@ -1625,7 +1642,10 @@ function showBillDetail(id) {
       <div class="card-row"><span style="font-size:13px;">Items subtotal</span><span style="font-size:13px;">${fmt(_dSubtotal)}</span></div>
       ${_dSc > 0 ? `<div class="card-row"><span style="font-size:13px;">Service charge (${_dScPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dSc)}</span></div>` : ''}
       ${_dVat > 0 ? `<div class="card-row"><span style="font-size:13px;">VAT (${_dVatPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dVat)}</span></div>` : ''}
-      ${_chDiscs.map(d => d.amt ? `<div class="card-row"><span style="font-size:13px;">${d.label || 'Discount'}</span><span style="font-size:13px;color:var(--grn,#2a9d5c);">−${fmt(d.amt)}</span></div>` : '').join('')}
+      ${_chDiscs.map(d => { if (!d.amt) return '';
+        const _who = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional' : d.assignTo === 'fixed' ? 'fixed' : '50/50';
+        return `<div class="card-row"><span style="font-size:13px;">${d.label || 'Discount'} <span style="color:var(--text3);font-size:11px;">(${_who})</span></span><span style="font-size:13px;color:var(--grn,#2a9d5c);">−${fmt(d.amt)}</span></div>`;
+      }).join('')}
       <div class="card-row" style="font-weight:600;border-top:0.5px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
     </div>` : ''}
     <div class="sec-label">Totals</div>
@@ -1636,7 +1656,7 @@ function showBillDetail(id) {
           <span style="font-size:14px;font-weight:600;">${fmt(b.shareA)}</span>
         </div>
         ${(b.itemsA != null) ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">
-          items ${fmt(b.itemsA)}${b.chargesA ? ' + charges ' + fmt(b.chargesA) : ''}${b.sharedDiscA ? ' − disc ' + fmt(b.sharedDiscA) : ''}
+          items ${fmt(b.itemsA)}${b.chargesA ? ' + charges ' + fmt(b.chargesA) : ''}${((b.itemDiscA||0) + (b.personalDiscA||0) + (b.sharedDiscA||0)) > 0 ? ' − disc ' + fmt((b.itemDiscA||0) + (b.personalDiscA||0) + (b.sharedDiscA||0)) : ''}
         </div>` : ''}
       </div>
       <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
@@ -1645,7 +1665,7 @@ function showBillDetail(id) {
           <span style="font-size:14px;font-weight:600;">${fmt(b.shareB)}</span>
         </div>
         ${(b.itemsB != null) ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">
-          items ${fmt(b.itemsB)}${b.chargesB ? ' + charges ' + fmt(b.chargesB) : ''}${b.sharedDiscB ? ' − disc ' + fmt(b.sharedDiscB) : ''}
+          items ${fmt(b.itemsB)}${b.chargesB ? ' + charges ' + fmt(b.chargesB) : ''}${((b.itemDiscB||0) + (b.personalDiscB||0) + (b.sharedDiscB||0)) > 0 ? ' − disc ' + fmt((b.itemDiscB||0) + (b.personalDiscB||0) + (b.sharedDiscB||0)) : ''}
         </div>` : ''}
       </div>
       <div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
@@ -2040,25 +2060,34 @@ function initManualItems() {
 
 function renderManualItems() {
   document.getElementById('manual-items').innerHTML = manualItems.map((item, i) =>
-    `<div class="card-row" style="gap:8px;">
-      <input type="text" placeholder="Item name" value="${item.name}" style="flex:2;min-width:0;" oninput="manualItems[${i}].name=this.value">
-      <input type="number" placeholder="Qty" value="${item.qty||1}" min="1" style="width:46px;flex:none;" oninput="manualItems[${i}].qty=parseInt(this.value)||1">
-      <input type="number" placeholder="Total" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value;updateManualTotal()">
-      ${manualItems.length>1 ? `<div onclick="removeManualItem(${i})" style="color:var(--red);font-size:18px;cursor:pointer;padding:0 4px;">×</div>` : ''}
+    `<div style="border-bottom:0.5px solid var(--border);padding:8px 0;">
+      <div class="card-row" style="gap:8px;border:none;padding:0 14px;">
+        <input type="text" placeholder="Item name" value="${item.name}" style="flex:2;min-width:0;" oninput="manualItems[${i}].name=this.value">
+        <input type="number" placeholder="Qty" value="${item.qty||1}" min="1" style="width:46px;flex:none;" oninput="manualItems[${i}].qty=parseInt(this.value)||1">
+        <input type="number" placeholder="Total" value="${item.price}" style="flex:1;min-width:0;" oninput="manualItems[${i}].price=this.value;updateManualTotal()">
+        ${manualItems.length>1 ? `<div onclick="removeManualItem(${i})" style="color:var(--red);font-size:18px;cursor:pointer;padding:0 4px;">×</div>` : ''}
+      </div>
+      ${item.discount ? `<div style="display:flex;align-items:center;gap:6px;padding:3px 14px 0;background:rgba(255,190,0,0.08);">
+        <span style="font-size:10px;font-weight:700;color:#7a5800;background:rgba(255,190,0,0.35);padding:1px 5px;border-radius:4px;">OCR</span>
+        <span style="font-size:11px;color:var(--text2);">${item.discountLabel || 'Discount'} −${fmt(item.discount)}</span>
+        <span onclick="manualItems[${i}].discount=0;manualItems[${i}].discountLabel='';renderManualItems();updateManualTotal();" style="color:var(--red);font-size:14px;cursor:pointer;margin-left:auto;">×</span>
+      </div>` : ''}
     </div>`).join('');
 }
 
-function addManualItem() { manualItems.push({ name:'', qty:1, price:'' }); renderManualItems(); }
+function addManualItem() { manualItems.push({ name:'', qty:1, price:'', discount:0, discountLabel:'' }); renderManualItems(); }
 function removeManualItem(i) { manualItems.splice(i, 1); renderManualItems(); updateManualTotal(); }
 
 function updateManualTotal() {
   const subtotal = manualItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0);
+  const itemDiscTotal = manualItems.reduce((s, it) => s + (it.discount || 0), 0);
   const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
   const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
-  const sc = subtotal * scPct / 100;
-  const vat = (subtotal + sc) * vatPct / 100;
+  const preTaxBase = subtotal - itemDiscTotal;
+  const sc = preTaxBase * scPct / 100;
+  const vat = (preTaxBase + sc) * vatPct / 100;
   const discTotal = (_ocrDiscounts || []).reduce((s, d) => s + (d.amount || 0), 0);
-  const total = subtotal + sc + vat - discTotal;
+  const total = preTaxBase + sc + vat - discTotal;
   const el = document.getElementById('manual-grand-total');
   if (el) el.textContent = fmt(Math.max(0, total));
 }
@@ -2223,6 +2252,8 @@ function prefillManualFromOCR(result) {
     name: it.name || '',
     qty: parseInt(it.qty) || 1,
     price: ((it.unit_price || 0) * (parseInt(it.qty) || 1)).toFixed(2),
+    discount: it.discount || 0,
+    discountLabel: it.discount_label || '',
   }));
   if (manualItems.length === 0) manualItems = [{ name: '', qty: 1, price: '' }];
   renderManualItems();
@@ -2296,7 +2327,7 @@ async function callGeminiOCR(base64, mimeType, model = geminiModel) {
   "date": "YYYY-MM-DD",
   "merchant": "restaurant or store name (English preferred; local script only if no English name exists; empty string if cannot determine)",
   "category": "food|shop|cafe|transport|other",
-  "items": [{"name": "item name", "qty": 1, "unit_price": 0}],
+  "items": [{"name": "item name", "qty": 1, "unit_price": 0, "discount": 0, "discount_label": ""}],
   "service_charge_percent": 0,
   "vat_percent": 0,
   "discounts": [{"description": "text", "amount": 0}],
@@ -2304,9 +2335,10 @@ async function callGeminiOCR(base64, mimeType, model = geminiModel) {
 }
 
 Rules:
+- items.discount: if a discount/coupon line appears directly BELOW an item on the receipt (e.g. "PB20% MUJI -30.00" under the item), put that discount on the item as a positive number. Set discount_label to the discount description text. If no per-item discount, set discount to 0 and discount_label to "".
 - service_charge_percent: extract the % rate (e.g. 10 for 10%). Set 0 if none.
 - vat_percent: ONLY set this if VAT is charged as an ADDITIONAL amount on top of the subtotal. If the receipt says "VAT included", "VAT inclusive", "inc. VAT", or shows VAT as an informational breakdown of prices already charged, set vat_percent to 0.
-- discounts: include coupons, vouchers, and any negative line items. amount should be positive (the deduction value).
+- discounts: bill-level coupons, vouchers, and negative line items that are NOT tied to a specific item. amount should be positive (the deduction value). Do NOT put item-level discounts here — those go on the item's discount field.
 - total: the final amount actually paid (after all charges and discounts).`;
 
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`, {
@@ -2382,6 +2414,8 @@ function goToReview(source) {
           name: it.name || 'Item',
           qty: parseInt(it.qty) || 1,
           price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
+          discount: it.discount || 0,
+          discountLabel: it.discountLabel || '',
         };
       });
       // Sync charges from form state (SC/VAT toggles + percentages)
@@ -2408,6 +2442,8 @@ function goToReview(source) {
         name: it.name || 'Item',
         qty: parseInt(it.qty) || 1,
         price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
+        discount: it.discount || 0,
+        discountLabel: it.discountLabel || '',
         assignment: 'shared',
         splitA: 50,
         splitB: 50,
@@ -2582,6 +2618,7 @@ function renderReviewItems() {
         <div style="flex:1;min-width:0;">
           <div class="text-strong">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
           <div class="text-sub">${fmt(it.price * it.qty)}</div>
+          ${it.discount ? `<div style="font-size:10px;color:var(--grn,#2a9d5c);margin-top:1px;">−${fmt(it.discount)} ${it.discountLabel || 'discount'}</div>` : ''}
         </div>
         ${showDropdown ? `<div class="assign-dd-wrap">
           <div class="assign-chip chip-custom" style="font-size:11px;padding:3px 10px;cursor:pointer;" onclick="openCustomSplit(${i});event.stopPropagation();">Custom</div>
@@ -2594,6 +2631,7 @@ function renderReviewItems() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;">${it.name}${it.qty>1?' ×'+it.qty:''}</div>
         <div style="font-size:11px;color:var(--text3);">${fmt(it.price * it.qty)}</div>
+        ${it.discount ? `<div style="font-size:10px;color:var(--grn,#2a9d5c);margin-top:1px;">−${fmt(it.discount)} ${it.discountLabel || 'discount'}</div>` : ''}
       </div>
       <div class="assign-dd-wrap">
         <div class="assign-chip ${chipClass}">
@@ -2806,15 +2844,30 @@ function recalc() {
   const scPct = charges.sc ? (parseFloat(document.getElementById('sc-pct')?.value) || 0) : 0;
   const vatPct = charges.vat ? (parseFloat(document.getElementById('vat-pct')?.value) || 0) : 0;
 
-  // Per-item share
+  // Per-item share (using original prices for item totals)
+  // Per-item discounts tracked separately — they follow the item's assignment
   let itemsA = 0, itemsB = 0;
+  let itemDiscA = 0, itemDiscB = 0;
+  const totalItemDisc = items.reduce((s, it) => s + (it.discount || 0), 0);
   items.forEach(it => {
     const total = it.price * it.qty;
-    if (it.assignment === 'a') itemsA += total;
-    else if (it.assignment === 'b') itemsB += total;
-    else if (it.assignment === 'qty') { itemsA += it.price * (it.qtyA || 0); itemsB += it.price * (it.qtyB || 0); }
-    else if (it.assignment === 'amt') { itemsA += it.amtA || 0; itemsB += it.amtB || 0; }
-    else { itemsA += total * (it.splitA || 50) / 100; itemsB += total * (it.splitB || 50) / 100; }
+    const disc = it.discount || 0;
+    if (it.assignment === 'a') { itemsA += total; itemDiscA += disc; }
+    else if (it.assignment === 'b') { itemsB += total; itemDiscB += disc; }
+    else if (it.assignment === 'qty') {
+      const qA = it.qtyA || 0, qB = it.qtyB || 0, qTotal = qA + qB;
+      itemsA += it.price * qA; itemsB += it.price * qB;
+      if (disc && qTotal > 0) { itemDiscA += disc * qA / qTotal; itemDiscB += disc * qB / qTotal; }
+    }
+    else if (it.assignment === 'amt') {
+      itemsA += it.amtA || 0; itemsB += it.amtB || 0;
+      if (disc && total > 0) { itemDiscA += disc * (it.amtA||0) / total; itemDiscB += disc * (it.amtB||0) / total; }
+    }
+    else {
+      const splitA = (it.splitA || 50) / 100, splitB = (it.splitB || 50) / 100;
+      itemsA += total * splitA; itemsB += total * splitB;
+      if (disc) { itemDiscA += disc * splitA; itemDiscB += disc * splitB; }
+    }
   });
 
   // Person-box discounts (pre-tax) — split by assignTo 'a' or 'b' only
@@ -2825,8 +2878,8 @@ function recalc() {
     else if (d.assignTo === 'b') personalDiscB += amt;
   });
 
-  // SC/VAT calculated on pre-tax base (items minus person discounts)
-  const preTaxBase = Math.max(0, subtotal - personalDiscA - personalDiscB);
+  // SC/VAT calculated on pre-tax base (items minus all pre-tax discounts)
+  const preTaxBase = Math.max(0, subtotal - totalItemDisc - personalDiscA - personalDiscB);
   const ratio = subtotal > 0 ? itemsA / subtotal : 0.5;
   const sc = preTaxBase * scPct / 100;
   const vat = (preTaxBase + sc) * vatPct / 100;
@@ -2844,12 +2897,12 @@ function recalc() {
   const chargesA = (sc + vat) * ratio;
   const chargesB = (sc + vat) * (1 - ratio);
 
-  const shareA = Math.max(0, itemsA - personalDiscA - sharedDiscA + chargesA);
-  const shareB = Math.max(0, itemsB - personalDiscB - sharedDiscB + chargesB);
+  const shareA = Math.max(0, itemsA - itemDiscA - personalDiscA - sharedDiscA + chargesA);
+  const shareB = Math.max(0, itemsB - itemDiscB - personalDiscB - sharedDiscB + chargesB);
   const grandTotal = Math.max(0, preTaxBase + sc + vat - sharedDiscA - sharedDiscB);
 
   // Update store
-  currentBill._calc = { subtotal, sc, scPct, vat, vatPct, discounts, personalDiscA, personalDiscB, sharedDiscA, sharedDiscB, grandTotal, shareA, shareB, chargesA, chargesB, itemsA, itemsB };
+  currentBill._calc = { subtotal, sc, scPct, vat, vatPct, discounts, itemDiscA, itemDiscB, personalDiscA, personalDiscB, sharedDiscA, sharedDiscB, grandTotal, shareA, shareB, chargesA, chargesB, itemsA, itemsB };
 
   // Update previews
   if (document.getElementById('sc-preview')) {
@@ -2860,8 +2913,8 @@ function recalc() {
   // Update person box subtotals (live, no re-render)
   const stA = document.getElementById('rv-subtotal-a');
   const stB = document.getElementById('rv-subtotal-b');
-  if (stA) stA.textContent = fmt(Math.max(0, itemsA - personalDiscA));
-  if (stB) stB.textContent = fmt(Math.max(0, itemsB - personalDiscB));
+  if (stA) stA.textContent = fmt(Math.max(0, itemsA - itemDiscA - personalDiscA));
+  if (stB) stB.textContent = fmt(Math.max(0, itemsB - itemDiscB - personalDiscB));
 
   // Update totals footer
   document.getElementById('rv-a-total').textContent = fmt(shareA);
@@ -2923,36 +2976,52 @@ function renderPersonBoxes() {
   const items = currentBill.items || [];
   const discounts = (currentBill.charges && currentBill.charges.discounts) || [];
 
-  let itemsA = 0, itemsB = 0;
+  let itemsA = 0, itemsB = 0, iDiscA = 0, iDiscB = 0;
   items.forEach(it => {
     const total = it.price * it.qty;
-    if (it.assignment === 'a') itemsA += total;
-    else if (it.assignment === 'b') itemsB += total;
-    else if (it.assignment === 'qty') { itemsA += it.price * (it.qtyA||0); itemsB += it.price * (it.qtyB||0); }
-    else if (it.assignment === 'amt') { itemsA += it.amtA||0; itemsB += it.amtB||0; }
-    else { itemsA += total * (it.splitA||50)/100; itemsB += total * (it.splitB||50)/100; }
+    const disc = it.discount || 0;
+    if (it.assignment === 'a') { itemsA += total; iDiscA += disc; }
+    else if (it.assignment === 'b') { itemsB += total; iDiscB += disc; }
+    else if (it.assignment === 'qty') {
+      const qA = it.qtyA||0, qB = it.qtyB||0, qT = qA+qB;
+      itemsA += it.price * qA; itemsB += it.price * qB;
+      if (disc && qT > 0) { iDiscA += disc*qA/qT; iDiscB += disc*qB/qT; }
+    }
+    else if (it.assignment === 'amt') {
+      itemsA += it.amtA||0; itemsB += it.amtB||0;
+      if (disc && total > 0) { iDiscA += disc*(it.amtA||0)/total; iDiscB += disc*(it.amtB||0)/total; }
+    }
+    else {
+      const sA = (it.splitA||50)/100, sB = (it.splitB||50)/100;
+      itemsA += total * sA; itemsB += total * sB;
+      if (disc) { iDiscA += disc*sA; iDiscB += disc*sB; }
+    }
   });
 
   const discA = discounts.filter(d => d.assignTo === 'a');
   const discB = discounts.filter(d => d.assignTo === 'b');
   const sumDiscA = discA.reduce((s,d) => s + (d.amt||0), 0);
   const sumDiscB = discB.reduce((s,d) => s + (d.amt||0), 0);
+  const totalDeductA = iDiscA + sumDiscA;
+  const totalDeductB = iDiscB + sumDiscB;
 
   document.getElementById('rv-person-boxes').innerHTML = `
     <div style="display:flex;gap:10px;">
       <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:600;color:var(--acc);margin-bottom:5px;">${nameA}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsA)}</div>
+        ${iDiscA > 0 ? `<div style="font-size:11px;color:var(--grn,#2a9d5c);margin-top:3px;">Item disc −${fmt(iDiscA)}</div>` : ''}
         ${discRows(discA, 'a')}
         <div onclick="addPersonDiscount('a')" style="font-size:11px;color:var(--acc);margin-top:6px;cursor:pointer;">+ discount</div>
-        ${sumDiscA > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-sumDiscA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
+        ${totalDeductA > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:var(--acc);">= <span id="rv-subtotal-a">${fmt(Math.max(0,itemsA-totalDeductA))}</span></div>` : '<div id="rv-subtotal-a" style="display:none;"></div>'}
       </div>
       <div style="flex:1;background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:600;color:#a0623a;margin-bottom:5px;">${nameB}</div>
         <div style="font-size:12px;color:var(--text2);">Items ${fmt(itemsB)}</div>
+        ${iDiscB > 0 ? `<div style="font-size:11px;color:var(--grn,#2a9d5c);margin-top:3px;">Item disc −${fmt(iDiscB)}</div>` : ''}
         ${discRows(discB, 'b')}
         <div onclick="addPersonDiscount('b')" style="font-size:11px;color:#a0623a;margin-top:6px;cursor:pointer;">+ discount</div>
-        ${sumDiscB > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-sumDiscB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
+        ${totalDeductB > 0 ? `<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:5px;font-size:12px;font-weight:600;color:#a0623a;">= <span id="rv-subtotal-b">${fmt(Math.max(0,itemsB-totalDeductB))}</span></div>` : '<div id="rv-subtotal-b" style="display:none;"></div>'}
       </div>
     </div>`;
 }
@@ -3129,7 +3198,14 @@ function goToConfirm() {
   const payee = currentBill.paidBy === 'a' ? nameB : nameA;
 
   // Breakdown
+  const totalItemDisc = (calc.itemDiscA||0) + (calc.itemDiscB||0);
   let bdown = `<div class="card-row"><span>Items subtotal</span><span>${fmt(calc.subtotal)}</span></div>`;
+  if (totalItemDisc > 0) {
+    // Show each item's discount individually
+    (currentBill.items || []).forEach(it => {
+      if (it.discount) bdown += `<div class="card-row"><span>${it.discountLabel || 'Item discount'} (${it.name})</span><span style="color:var(--grn);">-${fmt(it.discount)}</span></div>`;
+    });
+  }
   if (calc.sc) bdown += `<div class="card-row"><span>Service charge (${calc.scPct}%)</span><span>+${fmt(calc.sc)}</span></div>`;
   if (calc.vat) bdown += `<div class="card-row"><span>VAT (${calc.vatPct}%)</span><span>+${fmt(calc.vat)}</span></div>`;
   (calc.discounts || []).forEach(d => {
@@ -3145,14 +3221,14 @@ function goToConfirm() {
     <div class="card-row">
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="avatar av-a">CJ</div>
-        <div><div style="font-size:13px;font-weight:500;">${nameA}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsA)} + charges ${fmt(Math.abs(calc.chargesA))}</div></div>
+        <div><div style="font-size:13px;font-weight:500;">${nameA}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsA)}${calc.chargesA ? ' + charges ' + fmt(calc.chargesA) : ''}${((calc.itemDiscA||0) + (calc.personalDiscA||0) + (calc.sharedDiscA||0)) > 0 ? ' − disc ' + fmt((calc.itemDiscA||0) + (calc.personalDiscA||0) + (calc.sharedDiscA||0)) : ''}</div></div>
       </div>
       <div style="font-size:15px;font-weight:600;color:var(--acc);">${fmt(calc.shareA)}</div>
     </div>
     <div class="card-row">
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="avatar av-b">PP</div>
-        <div><div style="font-size:13px;font-weight:500;">${nameB}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsB)} + charges ${fmt(Math.abs(calc.chargesB))}</div></div>
+        <div><div style="font-size:13px;font-weight:500;">${nameB}</div><div style="font-size:10px;color:var(--text3);">items ${fmt(calc.itemsB)}${calc.chargesB ? ' + charges ' + fmt(calc.chargesB) : ''}${((calc.itemDiscB||0) + (calc.personalDiscB||0) + (calc.sharedDiscB||0)) > 0 ? ' − disc ' + fmt((calc.itemDiscB||0) + (calc.personalDiscB||0) + (calc.sharedDiscB||0)) : ''}</div></div>
       </div>
       <div style="font-size:15px;font-weight:600;color:#a0623a;">${fmt(calc.shareB)}</div>
     </div>`;
@@ -3200,6 +3276,10 @@ async function saveBill() {
     chargesB: calc.chargesB,
     itemsA: calc.itemsA,
     itemsB: calc.itemsB,
+    itemDiscA: calc.itemDiscA,
+    itemDiscB: calc.itemDiscB,
+    personalDiscA: calc.personalDiscA,
+    personalDiscB: calc.personalDiscB,
     sharedDiscA: calc.sharedDiscA,
     sharedDiscB: calc.sharedDiscB,
   };
