@@ -2,6 +2,8 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.63 (2026-06-27)
+    - Fix #98: Edit bill now preserves per-person discount assignments. editBill() only loads bill-level discounts (split/prop/fixed) into OCR form rows; per-person discounts (assignTo 'a'/'b') stay in currentBill.charges.discounts. goToReview() edit branch merges preserved per-person discounts with form-edited bill-level discounts instead of rebuilding all as 'split'.
   v2.1.62 (2026-06-21)
     - Fix #97: saveBill() reset block did not clear whoPaidManual — next manual bill would show previous payer pre-selected; goToReview() guard (if !whoPaidManual) would pass silently; added whoPaidManual = null + who-btn class reset to match cancelNewBill() behaviour
   v2.1.61 (2026-06-21)
@@ -819,7 +821,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.62</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.63</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1521,7 +1523,11 @@ function editBill(id) {
   ['sc','vat'].forEach(k => updateToggle(k));
   document.querySelectorAll('#sc-pct').forEach(el => el.value = ch.scPct || 10);
   document.querySelectorAll('#vat-pct').forEach(el => el.value = ch.vatPct || 7);
-  _ocrDiscounts = (ch.discounts || []).map(d => ({ amount: d.amt || 0, description: d.label || 'Discount' }));
+  // Only show bill-level discounts (split/prop/fixed) on the manual form as OCR rows.
+  // Per-person discounts (assignTo 'a'/'b') stay in currentBill.charges.discounts only — they're managed on the assign page.
+  _ocrDiscounts = (ch.discounts || [])
+    .filter(d => d.assignTo !== 'a' && d.assignTo !== 'b')
+    .map(d => ({ amount: d.amt || 0, description: d.label || 'Discount' }));
   renderOcrDiscounts();
 
   updateManualTotal();
@@ -2378,18 +2384,24 @@ function goToReview(source) {
           price: (parseFloat(it.price) || 0) / (parseInt(it.qty) || 1),
         };
       });
-      // Sync charges from form state (SC/VAT toggles + percentages + any remaining discounts)
+      // Sync charges from form state (SC/VAT toggles + percentages)
+      // Preserve per-person discounts (assignTo 'a'/'b') from the existing bill.
+      // Only rebuild bill-level discounts from _ocrDiscounts (the form-editable ones).
       const scPctEdit = parseFloat(document.getElementById('sc-pct')?.value) || 10;
       const vatPctEdit = parseFloat(document.getElementById('vat-pct')?.value) || 7;
+      const existingPersonDiscs = ((currentBill.charges && currentBill.charges.discounts) || [])
+        .filter(d => d.assignTo === 'a' || d.assignTo === 'b');
+      const updatedBillDiscs = (_ocrDiscounts || []).map(d => ({
+        id: (Date.now() + Math.random()).toString(),
+        amt: d.amount || 0, label: d.description || 'Discount', assignTo: 'split',
+      }));
       currentBill.charges = {
         sc: charges.sc, scPct: scPctEdit,
         vat: charges.vat, vatPct: vatPctEdit,
-        discounts: (_ocrDiscounts || []).map(d => ({
-          id: (Date.now() + Math.random()).toString(),
-          amt: d.amount || 0, label: d.description || 'Discount', assignTo: 'split',
-        })),
+        discounts: [...existingPersonDiscs, ...updatedBillDiscs],
       };
       _ocrDiscounts = [];
+      renderOcrDiscounts();
     } else {
       // New bill
       const items = formItems.map(it => ({
