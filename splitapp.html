@@ -2,7 +2,7 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
-  v2.1.67 (2026-06-27)
+  v2.1.68 (2026-06-27)
     - UX: Confirm "Who owes what" now shows per-person item detail — each person's items listed with amounts, per-item discounts, and charges breakdown instead of just a summary line.
   v2.1.65 (2026-06-27)
     - Feature #101: Per-item discount support. Items can have optional discount + discountLabel fields.
@@ -836,7 +836,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.67</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.68</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1559,115 +1559,177 @@ function showBillDetail(id) {
   const nameA = CONFIG.personA || 'A';
   const nameB = CONFIG.personB || 'B';
   const paidBy = b.paidBy === 'a' ? nameA : nameB;
-
-  let itemsHTML = '';
-  if (b.items && b.items.length) {
-    itemsHTML = b.items.map(it => {
-      const total = it.price * (it.qty || 1);
-      const splitA = it.splitA ?? 50;
-      const splitB = it.splitB ?? 50;
-      let assign, breakdown = '';
-      if (it.assignment === 'a') {
-        assign = `<span class="chip chip-a" style="font-size:10px;padding:2px 7px;">${nameA}</span>`;
-      } else if (it.assignment === 'b') {
-        assign = `<span class="chip chip-b" style="font-size:10px;padding:2px 7px;">${nameB}</span>`;
-      } else {
-        let labelA = nameA, labelB = nameB, amtA = 0, amtB = 0;
-        if (it.assignment === 'qty') {
-          amtA = it.price * (it.qtyA || 0);
-          amtB = it.price * (it.qtyB || 0);
-          labelA = `${nameA} ×${it.qtyA||0}`;
-          labelB = `${nameB} ×${it.qtyB||0}`;
-        } else if (it.assignment === 'amt') {
-          amtA = it.amtA || 0;
-          amtB = it.amtB || 0;
-        } else if (it.assignment === 'custom') {
-          amtA = total * (splitA / 100);
-          amtB = total * (splitB / 100);
-          labelA = `${nameA} ${splitA}%`;
-          labelB = `${nameB} ${splitB}%`;
-        } else {
-          amtA = total * 0.5;
-          amtB = total * 0.5;
-        }
-        assign = '';
-        breakdown = `
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:4px;padding:0 2px;">
-            <span>${labelA}</span><span>${fmt(amtA)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:1px;padding:0 2px;">
-            <span>${labelB}</span><span>${fmt(amtB)}</span>
-          </div>`;
-      }
-      const discLine = it.discount ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--grn,#2a9d5c);margin-top:2px;padding:0 2px;">
-        <span>${it.discountLabel || 'Discount'}</span><span>−${fmt(it.discount)}</span>
-      </div>` : '';
-      return `<div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:13px;">${it.name}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
-          <div style="display:flex;align-items:center;gap:8px;">${assign}<span style="font-size:13px;font-weight:500;">${fmt(total)}</span></div>
-        </div>
-        ${discLine}
-        ${breakdown}
-      </div>`;
-    }).join('');
-  } else {
-    itemsHTML = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>`;
-  }
-
-  // Derive display amounts: prefer stored calc fields (saveBill), fall back to live calc from charges config
+  const payee = b.paidBy === 'a' ? nameB : nameA;
+  const items = b.items || [];
   const _ch = b.charges || {};
+  const _chDiscs = (_ch.discounts || []);
+
+  // Derive display amounts
   const _dSubtotal = b.subtotal != null ? b.subtotal
-    : (b.items || []).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
+    : items.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
   const _dSc = b.sc != null ? b.sc
     : (_ch.sc ? _dSubtotal * (_ch.scPct || 10) / 100 : 0);
   const _dVat = b.vat != null ? b.vat
     : (_ch.vat ? (_dSubtotal + _dSc) * (_ch.vatPct || 7) / 100 : 0);
   const _dScPct = b.scPct || _ch.scPct || 10;
   const _dVatPct = b.vatPct || _ch.vatPct || 7;
-  const _chDiscs = (_ch.discounts || []);
-  const _hasCharges = _dSc > 0 || _dVat > 0 || _chDiscs.length > 0;
+
+  // Helper: classify items by ownership
+  function detailItemRowsFor(filter) {
+    const rows = [];
+    items.forEach(it => {
+      const total = it.price * (it.qty || 1);
+      const disc = it.discount || 0;
+      if (filter === 'shared') {
+        if (it.assignment === 'a' || it.assignment === 'b') return;
+        let label = '';
+        if (it.assignment === 'custom') label = ` (${it.splitA||50}/${it.splitB||50})`;
+        else if (it.assignment === 'qty') label = ` (${it.qtyA||0}/${it.qtyB||0})`;
+        else if (it.assignment === 'amt') label = ` (${fmt(it.amtA||0)}/${fmt(it.amtB||0)})`;
+        rows.push({ name: it.name + (it.qty > 1 ? ' ×'+it.qty : '') + label, amt: total, disc, discLabel: it.discountLabel });
+      } else {
+        if (it.assignment !== filter) return;
+        rows.push({ name: it.name + (it.qty > 1 ? ' ×'+it.qty : ''), amt: total, disc, discLabel: it.discountLabel });
+      }
+    });
+    return rows;
+  }
+
+  // Helper: compute person's share of shared items
+  function detailSharedPortionFor(person) {
+    let amt = 0, disc = 0;
+    items.forEach(it => {
+      if (it.assignment === 'a' || it.assignment === 'b') return;
+      const total = it.price * (it.qty || 1);
+      const d = it.discount || 0;
+      if (it.assignment === 'qty') {
+        const q = person === 'a' ? (it.qtyA||0) : (it.qtyB||0);
+        const qT = (it.qtyA||0) + (it.qtyB||0);
+        amt += it.price * q;
+        if (d && qT > 0) disc += d * q / qT;
+      } else if (it.assignment === 'amt') {
+        const a = person === 'a' ? (it.amtA||0) : (it.amtB||0);
+        amt += a;
+        if (d && total > 0) disc += d * a / total;
+      } else {
+        const split = person === 'a' ? (it.splitA||50)/100 : (it.splitB||50)/100;
+        amt += total * split;
+        if (d) disc += d * split;
+      }
+    });
+    return { amt, disc };
+  }
+
+  // ── Build merged breakdown ──
+  let bhtml = '';
+
+  // 1) Shared items section
+  const sharedRows = detailItemRowsFor('shared');
+  const sharedBillDiscs = _chDiscs.filter(d => d.amt && d.assignTo !== 'a' && d.assignTo !== 'b');
+  if (sharedRows.length > 0 || sharedBillDiscs.length > 0) {
+    bhtml += `<div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--text3);display:flex;align-items:center;justify-content:center;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        </div>
+        <span style="font-size:13px;font-weight:600;">Shared</span>
+      </div>
+      <div style="padding-left:32px;">`;
+    sharedRows.forEach(r => {
+      bhtml += `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);padding:2px 0;">
+        <span>${r.name}</span><span>${fmt(r.amt)}</span></div>`;
+      if (r.disc > 0) {
+        bhtml += `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--grn);padding:0 0 2px;padding-left:8px;">
+          <span>${r.discLabel || 'Discount'}</span><span>−${fmt(r.disc)}</span></div>`;
+      }
+    });
+    sharedBillDiscs.forEach(d => {
+      const typeLabel = d.assignTo === 'prop' ? 'proportional' : d.assignTo === 'fixed' ? `fixed ${fmt(d.amtA||0)}/${fmt(d.amtB||0)}` : '50/50';
+      bhtml += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:4px 0 0;border-top:0.5px dashed var(--border);margin-top:4px;">
+        <span style="color:var(--text3);">${d.label || 'Discount'} (${typeLabel})</span><span style="color:var(--grn);">−${fmt(d.amt)}</span></div>`;
+    });
+    bhtml += `</div></div>`;
+  }
+
+  // 2) Person sections
+  function renderDetailPerson(person, avClass, avLabel, pName) {
+    const ownRows = detailItemRowsFor(person);
+    const personalDiscs = _chDiscs.filter(d => d.amt && d.assignTo === person);
+    const shared = detailSharedPortionFor(person);
+    const share = person === 'a' ? b.shareA : b.shareB;
+    const hasContent = ownRows.length > 0 || shared.amt > 0 || personalDiscs.length > 0;
+    if (!hasContent && !share) return '';
+
+    let s = `<div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div class="avatar ${avClass}" style="width:24px;height:24px;font-size:9px;">${avLabel}</div>
+        <span style="font-size:13px;font-weight:600;">${pName}</span>
+      </div>
+      <div style="padding-left:32px;">`;
+    ownRows.forEach(r => {
+      s += `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);padding:2px 0;">
+        <span>${r.name}</span><span>${fmt(r.amt)}</span></div>`;
+      if (r.disc > 0) {
+        s += `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--grn);padding:0 0 2px;padding-left:8px;">
+          <span>${r.discLabel || 'Discount'}</span><span>−${fmt(r.disc)}</span></div>`;
+      }
+    });
+    personalDiscs.forEach(d => {
+      s += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;padding-left:8px;">
+        <span style="color:var(--text3);">${d.label || 'Discount'}</span><span style="color:var(--grn);">−${fmt(d.amt)}</span></div>`;
+    });
+    if (shared.amt > 0) {
+      const sharedNet = shared.amt - shared.disc;
+      s += `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);padding:4px 0 0;border-top:0.5px dashed var(--border);margin-top:4px;">
+        <span>+ Shared portion</span><span>${fmt(sharedNet)}</span></div>`;
+    }
+    s += `<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;padding:4px 0 0;">
+      <span>Subtotal</span><span>${fmt(share)}</span></div>`;
+    s += `</div></div>`;
+    return s;
+  }
+
+  bhtml += renderDetailPerson('a', 'av-a', 'CJ', nameA);
+  bhtml += renderDetailPerson('b', 'av-b', 'PP', nameB);
+
+  // 3) Totals footer
+  bhtml += `<div style="padding:10px 14px;font-size:12px;">`;
+  bhtml += `<div style="display:flex;justify-content:space-between;color:var(--text3);padding:2px 0;">
+    <span>Item subtotal</span><span>${fmt(_dSubtotal)}</span></div>`;
+  const totalDisc = (b.itemDiscA||0) + (b.itemDiscB||0) + (b.personalDiscA||0) + (b.personalDiscB||0) + (b.sharedDiscA||0) + (b.sharedDiscB||0);
+  if (totalDisc > 0) {
+    bhtml += `<div style="display:flex;justify-content:space-between;color:var(--grn);padding:2px 0;">
+      <span>Total discount</span><span>−${fmt(totalDisc)}</span></div>`;
+  }
+  if (_dSc > 0) bhtml += `<div style="display:flex;justify-content:space-between;color:var(--text3);padding:2px 0;">
+    <span>SC ${_dScPct}%</span><span>+${fmt(_dSc)}</span></div>`;
+  if (_dVat > 0) bhtml += `<div style="display:flex;justify-content:space-between;color:var(--text3);padding:2px 0;">
+    <span>VAT ${_dVatPct}%</span><span>+${fmt(_dVat)}</span></div>`;
+  bhtml += `<div style="display:flex;justify-content:space-between;font-weight:600;padding:6px 0 0;border-top:0.5px solid var(--border);margin-top:4px;font-size:14px;">
+    <span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>`;
+  bhtml += `</div>`;
+
+  // Fallback for old bills without item data
+  if (!items.length) {
+    bhtml = `<div class="card-row" style="color:var(--text3);font-size:13px;">No item detail — edit to add items</div>
+      <div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>`;
+  }
+
+  const owes = b.paidBy === 'a' ? b.shareB : b.shareA;
 
   document.getElementById('bill-detail-title').textContent = b.place || 'Bill detail';
   document.getElementById('bill-detail-content').innerHTML = `
     <div style="margin:8px 0 16px;">
       <div style="font-size:12px;color:var(--text3);">${fmtDate(b.date)} · Paid by ${paidBy}</div>
     </div>
-    <div class="sec-label">Items</div>
-    <div class="card" style="margin-top:0;">${itemsHTML}</div>
-    ${_hasCharges ? `
-    <div class="sec-label">Charges</div>
+    <div class="sec-label">Bill breakdown</div>
+    <div class="card" style="margin-top:0;">${bhtml}</div>
+    <div class="sec-label">Payment</div>
     <div class="card" style="margin-top:0;">
-      <div class="card-row"><span style="font-size:13px;">Items subtotal</span><span style="font-size:13px;">${fmt(_dSubtotal)}</span></div>
-      ${_dSc > 0 ? `<div class="card-row"><span style="font-size:13px;">Service charge (${_dScPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dSc)}</span></div>` : ''}
-      ${_dVat > 0 ? `<div class="card-row"><span style="font-size:13px;">VAT (${_dVatPct}%)</span><span style="font-size:13px;color:var(--text2);">+${fmt(_dVat)}</span></div>` : ''}
-      ${_chDiscs.map(d => { if (!d.amt) return '';
-        const _who = d.assignTo === 'a' ? nameA+' only' : d.assignTo === 'b' ? nameB+' only' : d.assignTo === 'prop' ? 'proportional' : d.assignTo === 'fixed' ? 'fixed' : '50/50';
-        return `<div class="card-row"><span style="font-size:13px;">${d.label || 'Discount'} <span style="color:var(--text3);font-size:11px;">(${_who})</span></span><span style="font-size:13px;color:var(--grn,#2a9d5c);">−${fmt(d.amt)}</span></div>`;
-      }).join('')}
-      <div class="card-row" style="font-weight:600;border-top:0.5px solid var(--border);margin-top:4px;padding-top:10px;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
-    </div>` : ''}
-    <div class="sec-label">Totals</div>
-    <div class="card" style="margin-top:0;">
-      <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:14px;font-weight:500;">${nameA}</span>
-          <span style="font-size:14px;font-weight:600;">${fmt(b.shareA)}</span>
-        </div>
-        ${(b.itemsA != null) ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">
-          items ${fmt(b.itemsA)}${b.chargesA ? ' + charges ' + fmt(b.chargesA) : ''}${((b.itemDiscA||0) + (b.personalDiscA||0) + (b.sharedDiscA||0)) > 0 ? ' − disc ' + fmt((b.itemDiscA||0) + (b.personalDiscA||0) + (b.sharedDiscA||0)) : ''}
-        </div>` : ''}
-      </div>
-      <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:14px;font-weight:500;">${nameB}</span>
-          <span style="font-size:14px;font-weight:600;">${fmt(b.shareB)}</span>
-        </div>
-        ${(b.itemsB != null) ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">
-          items ${fmt(b.itemsB)}${b.chargesB ? ' + charges ' + fmt(b.chargesB) : ''}${((b.itemDiscB||0) + (b.personalDiscB||0) + (b.sharedDiscB||0)) > 0 ? ' − disc ' + fmt((b.itemDiscB||0) + (b.personalDiscB||0) + (b.sharedDiscB||0)) : ''}
-        </div>` : ''}
-      </div>
-      <div class="card-row" style="font-weight:600;"><span>Grand total</span><span>${fmt(b.grandTotal)}</span></div>
+      <div class="card-row"><span>Paid by</span><span style="font-weight:500;">${paidBy}</span></div>
+      <div class="card-row"><span>${nameA}'s share</span><span>${fmt(b.shareA)}</span></div>
+      <div class="card-row"><span>${nameB}'s share</span><span>${fmt(b.shareB)}</span></div>
+      <div class="card-row" style="border-top:0.5px solid var(--border);padding-top:8px;margin-top:4px;"><span style="font-weight:500;">${payee} owes ${paidBy}</span><span class="amt-grn" style="font-weight:500;">+${fmt(owes)}</span></div>
     </div>
     <div style="display:flex;gap:10px;margin-top:20px;">
       <button onclick="editBill('${id}');" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--acc);background:transparent;color:var(--acc);font-size:14px;font-weight:600;cursor:pointer;">Edit</button>
