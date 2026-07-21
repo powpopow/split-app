@@ -2,6 +2,10 @@
   SplitApp — Personal expense splitter
   ════════════════════════════════════════
   CHANGELOG
+  v2.1.70 (2026-07-21)
+    - Fix #104: "All settled up" threshold unified to <฿0.01 across Home balance card, Share-balance message, and Confirm net-effect — was <฿1 in those three spots (hid up to ฿0.99 of real debt) while Summary already used <฿0.01.
+  v2.1.69 (2026-07-21)
+    - Fix #117/#118/#112: + (new bill) now resets draft/edit state via startNewBill() → resetNewBillDraft(). Prevents (a) a new bill overwriting a previously-edited bill when the edit was abandoned via nav (#117), (b) the previous draft's items/who-paid bleeding into a new bill (#118), (c) the stale grand-total showing after save (#112, updateManualTotal on reset). Cancel/back and Review-Back paths unchanged.
   v2.1.68 (2026-06-27)
     - UX: Confirm "Who owes what" now shows per-person item detail — each person's items listed with amounts, per-item discounts, and charges breakdown instead of just a summary line.
   v2.1.65 (2026-06-27)
@@ -836,7 +840,7 @@ const CONFIG = {
 
     <div class="sec-label">About</div>
     <div class="card">
-      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.68</div></div>
+      <div class="card-row"><div class="row-label">App version</div><div class="row-val">2.1.70</div></div>
       <div class="card-row"><div class="row-label">Backend version</div><div class="row-val" id="gs-version-val">—</div></div>
       <div class="card-row" onclick="openGSheet()" style="cursor:pointer;">
         <div class="row-label">Open Google Sheet</div>
@@ -1099,7 +1103,7 @@ const CONFIG = {
       <span>History</span>
     </div>
     <div class="nav-fab-wrap">
-      <div class="nav-fab" onclick="goTo('newbill')" aria-label="New bill">
+      <div class="nav-fab" onclick="startNewBill()" aria-label="New bill">
         <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </div>
     </div>
@@ -1430,7 +1434,7 @@ function renderHome() {
   const amtEl = document.getElementById('balance-amount');
   const lblEl = document.getElementById('balance-label');
   amtEl.textContent = fmt(myBal);
-  if (Math.abs(myBal) < 1) {
+  if (Math.abs(myBal) < 0.01) {
     card.style.background = 'var(--acc)';
     lblEl.textContent = 'All settled up';
   } else if (myBal > 0) {
@@ -1486,8 +1490,8 @@ function billRowHTML(b) {
   </div>`;
 }
 
-function cancelNewBill() {
-  // Clear all edit/new-bill state so it can't bleed into the next upload session
+function resetNewBillDraft() {
+  // Clear all edit/new-bill state so it can't bleed into the next session (#112/#117/#118)
   editingBillId = null;
   currentBill = {};
   const titleEl = document.getElementById('newbill-page-title');
@@ -1503,9 +1507,20 @@ function cancelNewBill() {
   ['sc','vat'].forEach(k => updateToggle(k));
   clearPlaceOcrNote();
   renderOcrDiscounts();
+  updateManualTotal();               // reset grand-total display (#112)
   const pillTabs = document.querySelector('.pill-tabs');
   if (pillTabs) pillTabs.style.display = '';
+}
+
+function cancelNewBill() {
+  resetNewBillDraft();
   goTo('home');
+}
+
+function startNewBill() {
+  // + fab entry point: always begin a clean bill (#112 stale total, #117 overwrite-edited-bill, #118 draft bleed)
+  resetNewBillDraft();
+  goTo('newbill');
 }
 
 function editBill(id) {
@@ -1829,7 +1844,7 @@ function shareBalance() {
   const myBal = currentUser === 'b' ? -bal : bal;
   const myName = currentUser === 'b' ? nameB : nameA;
   const otherName = currentUser === 'b' ? nameA : nameB;
-  const msg = Math.abs(myBal) < 1
+  const msg = Math.abs(myBal) < 0.01
     ? `${nameA} & ${nameB} are all settled up`
     : myBal > 0
     ? `${otherName} owes ${myName} ${fmt(myBal)} (${state.bills.length} bills)`
@@ -3435,7 +3450,7 @@ function goToConfirm() {
   const newBal = currentBill.paidBy === 'a'
     ? state.runningBalance + calc.shareB
     : state.runningBalance - calc.shareA;
-  const netLabel = Math.abs(newBal) < 1 ? 'All settled up'
+  const netLabel = Math.abs(newBal) < 0.01 ? 'All settled up'
     : newBal > 0 ? 'Get ' + fmt(newBal) + ' from ' + nameB
     : 'Pay ' + fmt(newBal) + ' to ' + nameB;
   document.getElementById('confirm-net-val').textContent = netLabel;
