@@ -4,6 +4,9 @@
 // email is listed in Config → person_a_emails / person_b_emails (see doPost below).
 // ════════════════════════════════════════════════════════
 // CHANGELOG
+// v2.0.3 (2026-11-03)
+//   - Weekly-email recipients are no longer hard-coded (this file is public). They come from the Config tab
+//     key `email_recipients` (comma-separated), falling back to person_a_emails + person_b_emails.
 // v2.0.2 (2026-11-03)
 //   - 'unauthorized' replies now carry a short `reason` code (no secrets) to make sign-in failures diagnosable.
 // v2.0.1 (2026-11-02)
@@ -93,7 +96,7 @@
 //   - Fix #126: single GS_VERSION constant used by getConfig + email footer (was drifting).
 //   - Fix #127: doPost mutations wrapped in LockService to serialise concurrent writes.
 
-const GS_VERSION = '2.0.2';
+const GS_VERSION = '2.0.3';
 
 // Google OAuth client ID of the web app (the ID token's `aud` must match this).
 const CLIENT_ID = '1095947409464-uf5j6j4q1jkdcsj7cksst7r1j8da09ii.apps.googleusercontent.com';
@@ -103,7 +106,7 @@ const CLIENT_ID = '1095947409464-uf5j6j4q1jkdcsj7cksst7r1j8da09ii.apps.googleuse
 // Config keys that must never leave the server, even to a signed-in user.
 function isPrivateConfigKey_(k) {
   k = String(k).toLowerCase();
-  return k.indexOf('secret') !== -1 || k === 'person_a_emails' || k === 'person_b_emails';
+  return k.indexOf('secret') !== -1 || k === 'person_a_emails' || k === 'person_b_emails' || k === 'email_recipients';
 }
 
 function json_(obj) {
@@ -352,7 +355,8 @@ function sendWeeklySummary() {
   const currency   = cfg['currency_symbol'] || '฿';
   const sheetUrl   = cfg['sheet_url']   || '';
   const appUrl     = cfg['app_url']     || '';
-  const toEmails   = 'chanavi.pp@gmail.com,patpatphongsithichok@gmail.com';
+  const toEmails   = recipients_(cfg);
+  if (!toEmails) { console.error('weekly summary: no recipients (set Config → email_recipients)'); return; }
   const gsVersion  = GS_VERSION;
 
   // Read bills
@@ -398,6 +402,15 @@ function sendWeeklySummary() {
   });
 
   MailApp.sendEmail({ to: toEmails, subject: subject, htmlBody: htmlBody });
+}
+
+// Weekly-email recipients: Config → email_recipients, else both people's sign-in emails.
+// Addresses must never be hard-coded here — this file is published on GitHub.
+function recipients_(cfg) {
+  const raw = String(cfg['email_recipients'] || '').trim() || [cfg['person_a_emails'], cfg['person_b_emails']].join(',');
+  const seen = {};
+  return raw.split(/[,;\s]+/).map(function (e) { return e.trim().toLowerCase(); })
+    .filter(function (e) { if (e.indexOf('@') === -1 || seen[e]) return false; seen[e] = true; return true; }).join(',');
 }
 
 function formatDateLabel_(date) {
