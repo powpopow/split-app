@@ -53,6 +53,7 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
   const [timingPrompt, setTimingPrompt] = useState(null); // { count, total, label } when OCR timing is ambiguous (#136)
   const [promptMore, setPromptMore] = useState(false);     // prompt: rare stages revealed
   const [discAdvanced, setDiscAdvanced] = useState(false); // manual editor: 4-way stage picker revealed
+  const [discErr, setDiscErr] = useState('');              // #177 why the last "+ add" refused (was a silent no-op)
   const [ocrPlace, setOcrPlace] = useState(false);         // place was OCR-filled → show "tap to verify" note (#139)
   const [showDiscEditor, setShowDiscEditor] = useState(false); // charges card: discount editor collapsed by default (#139)
   const [assignMode, setAssignMode] = useState(null); // Review tap-to-assign active name: null | 'a' | 'b' | 'shared' (#141)
@@ -127,7 +128,11 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
   const [qTotal, setQTotal] = useState(editQuick?.totalExpr ?? (isQuick ? String(editing.grandTotal ?? '') : ''));
   const [qA, setQA] = useState(editQuick?.aExpr ?? '');
   const [qB, setQB] = useState(editQuick?.bExpr ?? '');
-  const lastTotal = useRef(0), lastA = useRef(0), lastB = useRef(0);
+  // #179 quick-split discount. Bill Total is what the bill SAYS; this comes off it (matches the OCR flow).
+  const [qDisc, setQDisc] = useState(editQuick?.discExpr ?? '');
+  const [qDiscMode, setQDiscMode] = useState(editQuick?.discMode ?? 'split'); // split | prop | a | b
+  const [qDiscLabel, setQDiscLabel] = useState(editQuick?.discLabel ?? '');
+  const lastTotal = useRef(0), lastA = useRef(0), lastB = useRef(0), lastDisc = useRef(0);
   const fieldVal = (expr, ref) => { const s = (expr || '').trim(); if (s === '') { ref.current = 0; return 0; } const v = evalExpr(expr); if (v != null) ref.current = v; return ref.current; };
 
   // ── Review tap-to-assign handlers (#141, ported from old app) ──
@@ -142,19 +147,37 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
   const setDirect = (id, val) => { setOpenDd(null); setItemAssign(id, { assignment: val, ...(val === 'shared' ? { splitA: 50, splitB: 50 } : {}) }); };
 
   // Returns true if a discount was added (so the caller can collapse the editor).
+  // #177 — a refusal now SAYS so. It used to `return false` silently, so a bill where the amount
+  // hadn't registered looked like a dead button ("tapping + add does nothing"). An off-receipt
+  // discount (one the user got offline, so OCR can't find it) is added through exactly this path.
+  // Amounts are taken as magnitudes: typing "-100" for a discount means 100 off, not 100 on.
   const addDiscount = () => {
-    const amt = parseFloat(disc.amt) || 0;
+    const amt = Math.abs(parseFloat(disc.amt) || 0);
     const id = uid();
     const ts = disc.taxStage || 'post';
     let entry;
-    if (disc.target === 'a' || disc.target === 'b') { if (!amt) return false; entry = { id, amt, label: disc.label || 'Discount', assignTo: disc.target }; }
-    else if (disc.target === 'fixed') { const a = parseFloat(disc.amtA) || 0, b = parseFloat(disc.amtB) || 0; if (!a && !b) return false; entry = { id, amt: a + b, amtA: a, amtB: b, label: disc.label || 'Voucher', assignTo: 'fixed', taxStage: ts }; }
-    else if (disc.target === 'pct') { if (!amt) return false; entry = { id, amt, pctA: disc.pctA, label: disc.label || 'Voucher', assignTo: 'pct', taxStage: ts }; }
-    else { if (!amt) return false; entry = { id, amt, label: disc.label || 'Voucher', assignTo: disc.target, taxStage: ts }; } // split | prop
+    if (disc.target === 'a' || disc.target === 'b') { if (!amt) { setDiscErr('Enter an amount.'); return false; } entry = { id, amt, label: disc.label || 'Discount', assignTo: disc.target }; }
+    else if (disc.target === 'fixed') { const a = Math.abs(parseFloat(disc.amtA) || 0), b = Math.abs(parseFloat(disc.amtB) || 0); if (!a && !b) { setDiscErr(`Enter an amount for ${nameA} or ${nameB}.`); return false; } entry = { id, amt: a + b, amtA: a, amtB: b, label: disc.label || 'Voucher', assignTo: 'fixed', taxStage: ts }; }
+    else if (disc.target === 'pct') { if (!amt) { setDiscErr('Enter an amount.'); return false; } entry = { id, amt, pctA: disc.pctA, label: disc.label || 'Voucher', assignTo: 'pct', taxStage: ts }; }
+    else { if (!amt) { setDiscErr('Enter an amount.'); return false; } entry = { id, amt, label: disc.label || 'Voucher', assignTo: disc.target, taxStage: ts }; } // split | prop
     setCharges((c) => ({ ...c, discounts: [...c.discounts, entry] }));
     setDisc({ amt: '', label: '', target: 'split', pctA: 50, amtA: '', amtB: '', taxStage: 'post' });
+    setDiscErr('');
     return true;
   };
+  // #177 — commit on pointerdown, BEFORE the tap can be eaten by the on-screen keyboard dismissing
+  // and re-flowing this (wrapping) row out from under the finger. preventDefault keeps focus put.
+  // Both onPointerDown (mobile, beats the keyboard) and onClick (keyboard/assistive activation) call
+  // this, so it is guarded: a second commit within 400ms is the same gesture, not a second discount.
+  const lastCommit = useRef(0);
+  const commitDiscount = (e) => {
+    if (e) e.preventDefault();
+    const now = Date.now();
+    if (now - lastCommit.current < 400) return;
+    lastCommit.current = now;
+    if (addDiscount()) setShowDiscEditor(false);
+  };
+  const discKey = (e) => { if (e.key === 'Enter') commitDiscount(e); };
   const rmDisc = (id) => setCharges((c) => ({ ...c, discounts: c.discounts.filter((d) => d.id !== id) }));
   // Fees (delivery/platform/…): added after tax, split by a chosen mode; default 'prop' = follow each person's food share.
   const setFeeField = (id, patch) => setCharges((c) => ({ ...c, fees: (c.fees || []).map((f) => f.id === id ? { ...f, ...patch } : f) }));
@@ -331,9 +354,30 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
   const qBVal = fieldVal(qB, lastB);
   const isExpr = (s) => { s = (s || '').trim(); return /[+*/]/.test(s) || /\S-/.test(s); }; // has a binary operator → worth showing the "= ฿…" sum
   const qShared = qTotalVal - qAVal - qBVal;
-  const qShareA = qAVal + qShared / 2;   // Powpow
-  const qShareB = qBVal + qShared / 2;   // Pat
+  // Shares BEFORE the discount: each person's own amount + half of what's left over.
+  const qBaseA = qAVal + qShared / 2;    // Powpow
+  const qBaseB = qBVal + qShared / 2;    // Pat
+  // #179 — the discount comes off the printed total and off whoever it belongs to.
+  const qDiscVal = Math.max(0, fieldVal(qDisc, lastDisc));
+  const qDiscCut = (() => {
+    if (!(qDiscVal > 0)) return [0, 0];
+    if (qDiscMode === 'a') return [qDiscVal, 0];
+    if (qDiscMode === 'b') return [0, qDiscVal];
+    if (qDiscMode === 'prop') { const t = qBaseA + qBaseB; const r = t > 0 ? qBaseA / t : 0.5; return [qDiscVal * r, qDiscVal * (1 - r)]; }
+    return [qDiscVal / 2, qDiscVal / 2]; // split
+  })();
+  const qShareA = qBaseA - qDiscCut[0];
+  const qShareB = qBaseB - qDiscCut[1];
+  const qGrand = qTotalVal - qDiscVal;
   const qOver = qAVal + qBVal > qTotalVal + 1e-9; // personal amounts exceed the total → block
+  // A discount bigger than the share it comes off would force a clamp, and a clamped share no longer
+  // sums to the grand total (the #108 drift class). Refuse it instead, the way qOver already does.
+  const qDiscOver = qDiscVal > 1e-9 && (
+    qDiscMode === 'a' ? qDiscVal > qBaseA + 1e-9
+    : qDiscMode === 'b' ? qDiscVal > qBaseB + 1e-9
+    : qDiscVal > qTotalVal + 1e-9);
+  const qDiscOverMsg = qDiscMode === 'a' ? `more than ${nameA}'s share` : qDiscMode === 'b' ? `more than ${nameB}'s share` : 'more than the bill total';
+  const qBlocked = qOver || qDiscOver;
   const qOwes = paidBy === 'a' ? qShareB : qShareA;           // non-payer owes the payer their share
   const qOwesFrom = paidBy === 'a' ? nameB : nameA;
   const qOwesTo = paidBy === 'a' ? nameA : nameB;
@@ -348,7 +392,10 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
     if (!paidBy) return alert('Select who paid.');
     if (!(qTotalVal > 0)) return alert('Enter the bill total.');
     if (qOver) return alert('The two personal amounts add up to more than the total.');
-    const quick = { totalExpr: qTotal, aExpr: qA, bExpr: qB };
+    if (qDiscOver) return alert(`The discount is ${qDiscOverMsg}.`);
+    const quick = { totalExpr: qTotal, aExpr: qA, bExpr: qB, discExpr: qDisc, discMode: qDiscMode, discLabel: qDiscLabel };
+    // #179 — persisted as a normal discount so it round-trips through charges_json and shows in Bill detail.
+    const qDiscounts = qDiscVal > 0 ? [{ id: uid(), amt: qDiscVal, label: qDiscLabel || 'Discount', assignTo: qDiscMode, taxStage: 'post' }] : [];
     const bill = {
       id: editing?.id || uid(), date, place, paidBy,
       category: editing?.category || '', // empty → AI categorizes in the background (#148); safe (catMeta falls back to 'other')
@@ -356,8 +403,8 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
       items: [],
       // Embed mode+quick inside charges too — charges_json round-trips through the Sheet,
       // so quick markers survive a reload (top-level mode/quick are not persisted columns). #147
-      charges: { sc: false, scPct: 10, vat: false, vatPct: 7, discounts: [], mode: 'quick', quick },
-      grandTotal: qTotalVal, shareA: qShareA, shareB: qShareB,
+      charges: { sc: false, scPct: 10, vat: false, vatPct: 7, discounts: qDiscounts, mode: 'quick', quick },
+      grandTotal: qGrand, shareA: qShareA, shareB: qShareB,
     };
     (editing ? editBill : addBill)(bill);
     // Background AI categorization for a new quick bill with no category (#148). Fire-and-forget;
@@ -484,20 +531,20 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
                 })}
                 {!showDiscEditor ? (
                   <div style={{ padding: '10px 12px', borderTop: '0.5px solid var(--border)' }}>
-                    <button className="pillbtn" style={{ color: 'var(--acc)', border: 'none', padding: 0 }} onClick={() => setShowDiscEditor(true)}>+ add voucher / discount</button>
+                    <button className="pillbtn" style={{ color: 'var(--acc)', border: 'none', padding: 0 }} onClick={() => { setDiscErr(''); setShowDiscEditor(true); }}>+ add voucher / discount</button>
                   </div>
                 ) : (
                   <div style={{ padding: '10px 12px', borderTop: '0.5px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <input className="inp" placeholder="Label" value={disc.label} style={{ flex: 1 }} onChange={(e) => setDisc({ ...disc, label: e.target.value })} />
-                    {disc.target !== 'fixed' && <input className="inp" type="number" placeholder="Amount" value={disc.amt} style={{ width: 90 }} onChange={(e) => setDisc({ ...disc, amt: e.target.value })} />}
-                    <select className="inp" value={disc.target} onChange={(e) => setDisc({ ...disc, target: e.target.value })}>
+                    {disc.target !== 'fixed' && <input className="inp" type="number" inputMode="decimal" placeholder="Amount" value={disc.amt} style={{ width: 90 }} onKeyDown={discKey} onChange={(e) => { setDiscErr(''); setDisc({ ...disc, amt: e.target.value }); }} />}
+                    <select className="inp" value={disc.target} onChange={(e) => { setDiscErr(''); setDisc({ ...disc, target: e.target.value }); }}>
                       <option value="split">Shared 50/50</option><option value="prop">Proportional</option><option value="pct">Shared %</option>
                       <option value="fixed">Fixed A/B</option><option value="a">{nameA} only</option><option value="b">{nameB} only</option>
                     </select>
                     {disc.target === 'pct' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{nameA} <input className="inp" type="number" value={disc.pctA} style={{ width: 54 }} onChange={(e) => setDisc({ ...disc, pctA: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })} />%</span>}
                     {disc.target === 'fixed' && (<>
-                      <input className="inp" type="number" placeholder={`${nameA} ฿`} value={disc.amtA} style={{ width: 80 }} onChange={(e) => setDisc({ ...disc, amtA: e.target.value })} />
-                      <input className="inp" type="number" placeholder={`${nameB} ฿`} value={disc.amtB} style={{ width: 80 }} onChange={(e) => setDisc({ ...disc, amtB: e.target.value })} />
+                      <input className="inp" type="number" inputMode="decimal" placeholder={`${nameA} ฿`} value={disc.amtA} style={{ width: 80 }} onKeyDown={discKey} onChange={(e) => { setDiscErr(''); setDisc({ ...disc, amtA: e.target.value }); }} />
+                      <input className="inp" type="number" inputMode="decimal" placeholder={`${nameB} ฿`} value={disc.amtB} style={{ width: 80 }} onKeyDown={discKey} onChange={(e) => { setDiscErr(''); setDisc({ ...disc, amtB: e.target.value }); }} />
                     </>)}
                     {disc.target !== 'a' && disc.target !== 'b' && (
                       (discAdvanced || disc.taxStage === 'preVat' || disc.taxStage === 'preSc') ? (
@@ -514,8 +561,9 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
                         </span>
                       )
                     )}
-                    <button className="pillbtn" style={{ color: 'var(--acc)' }} onClick={() => { if (addDiscount()) setShowDiscEditor(false); }}>+ add</button>
-                    <button className="back-btn" style={{ fontSize: 12 }} onClick={() => setShowDiscEditor(false)}>cancel</button>
+                    <button className="pillbtn" style={{ color: 'var(--acc)' }} onPointerDown={commitDiscount} onClick={commitDiscount}>+ add</button>
+                    <button className="back-btn" style={{ fontSize: 12 }} onClick={() => { setDiscErr(''); setShowDiscEditor(false); }}>cancel</button>
+                    {discErr && <div style={{ flexBasis: '100%', color: 'var(--red)', fontSize: 12.5 }}>{discErr}</div>}
                   </div>
                 )}
                 {(charges.fees || []).map((f) => (
@@ -617,14 +665,39 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
               <input className="inp" inputMode="text" placeholder="e.g. 250" value={qB} onChange={(e) => setQB(e.target.value)} />
               {isExpr(qB) && <div style={{ fontSize: 12, color: 'var(--acc-text)', marginTop: 4 }}>= {fmtMoney(qBVal, sym)}</div>}
 
+              {/* #179 — a discount you got off the bill (voucher, promo, offline deal). Bill Total stays
+                  what the bill says; this comes off it, and off whoever it belongs to. */}
+              <div className="sec-label" style={{ marginTop: 14 }}>DISCOUNT <span style={{ color: 'var(--text3)', fontWeight: 400, textTransform: 'none' }}>· optional</span></div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="inp" inputMode="text" placeholder="e.g. 100" value={qDisc} style={{ width: 110 }} onChange={(e) => setQDisc(e.target.value)} />
+                <select className="inp" value={qDiscMode} style={{ flex: 1 }} onChange={(e) => setQDiscMode(e.target.value)}>
+                  <option value="split">Shared 50/50</option>
+                  <option value="prop">Proportional</option>
+                  <option value="a">{nameA} only</option>
+                  <option value="b">{nameB} only</option>
+                </select>
+              </div>
+              {qDiscVal > 0 && (
+                <input className="inp" placeholder="Label (e.g. Voucher)" value={qDiscLabel} style={{ marginTop: 6 }} onChange={(e) => setQDiscLabel(e.target.value)} />
+              )}
+              {isExpr(qDisc) && <div style={{ fontSize: 12, color: 'var(--acc-text)', marginTop: 4 }}>= {fmtMoney(qDiscVal, sym)}</div>}
+
               <div className="card" style={{ padding: 14, marginTop: 18, fontSize: 13 }}>
                 {qOver ? (
                   <div style={{ color: 'var(--red)' }}>The two personal amounts (฿{fmtMoney(qAVal + qBVal, '')}) exceed the bill total. Adjust before saving.</div>
+                ) : qDiscOver ? (
+                  <div style={{ color: 'var(--red)' }}>The discount ({fmtMoney(qDiscVal, sym)}) is {qDiscOverMsg}. Adjust before saving.</div>
                 ) : (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)', marginBottom: 6 }}>
                       <span>Shared (split 50/50)</span><span>{fmtMoney(Math.max(0, qShared), sym)} → {fmtMoney(Math.max(0, qShared) / 2, sym)} each</span>
                     </div>
+                    {qDiscVal > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)', marginBottom: 6 }}>
+                        <span>{qDiscLabel || 'Discount'} ({qDiscMode === 'a' ? nameA : qDiscMode === 'b' ? nameB : qDiscMode === 'prop' ? 'proportional' : '50/50'})</span>
+                        <span style={{ color: '#2a9d5c' }}>−{fmtMoney(qDiscVal, sym)} → total {fmtMoney(qGrand, sym)}</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '0.5px solid var(--border)' }}>
                       <span style={{ color: 'var(--acc)' }}>{nameA} <b>{fmtMoney(qShareA, sym)}</b></span>
                       <span style={{ color: '#a0623a' }}>{nameB} <b>{fmtMoney(qShareB, sym)}</b></span>
@@ -646,7 +719,7 @@ export default function NewBillFlow({ onClose, onMinimize, editing, onSaved }) {
                 )}
               </div>
 
-              <button className="btn" style={{ marginTop: 16, opacity: qOver ? 0.5 : 1 }} onClick={saveQuick}>Save bill</button>
+              <button className="btn" style={{ marginTop: 16, opacity: qBlocked ? 0.5 : 1 }} onClick={saveQuick}>Save bill</button>
             </>
           )}
         </div>

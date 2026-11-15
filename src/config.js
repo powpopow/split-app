@@ -3,6 +3,54 @@
 // localStorage at boot (see api.js, M2). These are the structural defaults + UI constants.
 
 // APP CHANGELOG — React rebuild (migration #128). Bump APP_VERSION here (single source; shown in Settings).
+// v3.29.0 (2026-11-15) — #179 discount in the manual quick-split flow. The quick form had Total / A-only / B-only and
+//                        hard-coded `discounts: []`, so a discount could only be hidden inside the numbers. New optional
+//                        DISCOUNT field + split mode (Shared 50/50 · Proportional · {A} only · {B} only) + label.
+//                        **Bill Total stays what the bill SAYS** (user's call) and the discount comes off it:
+//                        grandTotal = total − discount, each share reduced per mode. Saved as a normal entry in
+//                        `charges.discounts`, so it round-trips through charges_json and survives edit/reload; the
+//                        expression + mode + label also ride in `quick` so the form refills exactly. Bill detail's quick
+//                        breakdown now shows the discount and a net Total, and its Shared row works off the PRINTED
+//                        total (it used grandTotal, which reads short once a discount exists). A discount larger than the
+//                        share it comes off is **refused** with an inline reason rather than clamped — a clamped share
+//                        stops summing to the total (#108 drift class). Guarded by new audit/quick-discount-harness.js.
+// v3.28.0 (2026-11-15) — #177 add an off-receipt discount: "+ add" on the CHARGES card could look dead. Three changes,
+//                        all in NewBillFlow.jsx. (1) The commit now fires on **onPointerDown**, before an on-screen
+//                        keyboard dismissing can re-flow that wrapping row out from under the finger and cancel the
+//                        click — the leading explanation for "tapping + add does nothing" on a phone. onClick is kept
+//                        for keyboard/assistive activation, and both go through a 400ms guard so one gesture can never
+//                        add two discounts. (2) Enter in any amount field commits. (3) A refusal now SAYS why
+//                        ("Enter an amount.") inline in red instead of returning false silently — the actual defect,
+//                        since a form that ignores you reads as broken whatever the cause. Also: amounts are taken as
+//                        magnitudes, so typing "-100" means 100 off rather than 100 on, and the amount fields get
+//                        inputMode="decimal". The identical silent no-op in the FEE editor is logged as #178, untouched.
+// v3.27.0 (2026-11-08) — #176 stay signed in: the app no longer uses the Google ID token as its session. That token lives
+//                        ~1 hour, so every new day the client had nothing valid, the silent One Tap refresh could not be
+//                        relied on (its isNotDisplayed/isSkippedMoment callbacks are unsupported once FedCM is on, and auto
+//                        sign-in has a 10-minute quiet period), and the user was dropped back to Sign-in daily. Now the
+//                        backend verifies a Google token ONCE and mints its own 60-day session token (GS 2.1.0), which the
+//                        client sends on every request and which renews itself past halfway. `src/auth.js` gains the session
+//                        store; `api.js` sends `sessionToken` + stores any `session` a reply carries. Sign-in is now once
+//                        per two months of inactivity, not once a day.
+//                        Also: an expired session no longer signs you out. `store.jsx` keeps `authedUser` and raises
+//                        `sessionExpired`; the new `screens/Reauth.jsx` sheet appears OVER the live app, so re-authorising
+//                        resumes exactly where you were (a parked bill survives). Settings "Sign out" still signs out fully.
+//                        SignIn/Reauth clear any stale session first so the chosen Google account decides identity.
+// v3.26.0 (2026-11-07) — #174 server-verified sign-in + #175 delivery/platform fees. RETRO-VERSIONED: both shipped from the
+//                        ~/Desktop/split-app clone on 2026-11-02/03 (commits 8ccaeda, 03f4ab2) with no version bump and no
+//                        doc record; code reconciled back into this folder 2026-11-07, hence one combined version.
+//                        #174 (Security) — every backend request now carries a Google ID token (new `src/auth.js`: store,
+//                        expiry check, silent One Tap refresh). The backend verifies it with Google and matches the email to
+//                        person_a_emails/person_b_emails itself, so the browser no longer decides who is authorised; SignIn
+//                        calls `whoami` instead of checking the allow-list locally; api.js attaches the token to every POST
+//                        and retries once after a silent refresh before signing out. Backend GS 1.11.0 -> 2.0.3: doGet closed,
+//                        reads moved to POST actions (getBills/getConfig/whoami), getConfig no longer returns the email lists,
+//                        auth rejections carry a reason code, weekly-email recipients read from Config `email_recipients`
+//                        instead of being hard-coded in a public file. Deployed via clasp (apps-script/, scriptId 1YS9Plv...).
+//                        #175 (Feature) — extra fees (delivery / platform / packaging): added AFTER tax, outside the SC/VAT
+//                        bases, with 5 split modes (prop = proportional to each share, split 50/50, pct, fixed amounts, or
+//                        all-A / all-B). OCR extracts fees from the receipt; "+ add fee (delivery, platform...)" adds them by
+//                        hand. calc.js `charges.fees` + feeA/feeB, NewBillFlow fee editor, BillDetail display.
 // v3.25.1 (2026-08-31) — #169 telemetry fix: OCR log `gs` field was reading `config.gs_version` (undefined — the client
 //                        maps it to `config.gsVersion`), so backend version logged blank. Now reads `config.gsVersion`.
 // v3.25.0 (2026-08-31) — #173 refresh button polish: the bare faint double-arrow icon on the balance card is now a
@@ -183,7 +231,7 @@
 //                       #129 re-skin: styles.css + nav (centered FAB, fixed icons) + Home + History.
 // v3.0.0 (2026-07-22) — initial React scaffold through M5 (feature-complete: CRUD, custom split,
 //                       discounts incl %, edit, date filters, OCR, Google auth).
-export const APP_VERSION = '3.25.1';
+export const APP_VERSION = '3.29.0';
 
 export const CONFIG_DEFAULTS = {
   personA: '',

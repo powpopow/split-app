@@ -4,6 +4,15 @@
 // email is listed in Config → person_a_emails / person_b_emails (see doPost below).
 // ════════════════════════════════════════════════════════
 // CHANGELOG
+// v2.1.0 (2026-11-08)
+//   - Fix #176 (app sessions): a Google ID token lives ~1 hour, so it could not carry a session - users were
+//     bounced to Sign-in every day. After verifying an ID token we now mint our OWN session token:
+//     base64url(email) + '.' + exp + '.' + HMAC-SHA256(payload, secret), secret auto-generated into Script
+//     Properties (never in this file - the repo is public). Default life SESSION_DAYS = 60. Stateless: nothing
+//     is stored per session, so there is no new tab and no extra read. The token carries the EMAIL, not a/b, and
+//     doPost still calls personFor_() on every request - so removing someone from the allow-list still locks
+//     them out immediately rather than in 60 days. Revoke everyone at once by deleting the `session_secret`
+//     Script Property. whoami returns `session`; any request may carry `sessionToken` instead of `idToken`.
 // v2.0.3 (2026-11-03)
 //   - Weekly-email recipients are no longer hard-coded (this file is public). They come from the Config tab
 //     key `email_recipients` (comma-separated), falling back to person_a_emails + person_b_emails.
@@ -96,7 +105,7 @@
 //   - Fix #126: single GS_VERSION constant used by getConfig + email footer (was drifting).
 //   - Fix #127: doPost mutations wrapped in LockService to serialise concurrent writes.
 
-const GS_VERSION = '2.0.3';
+const GS_VERSION = '2.1.0';
 
 // Google OAuth client ID of the web app (the ID token's `aud` must match this).
 const CLIENT_ID = '1095947409464-uf5j6j4q1jkdcsj7cksst7r1j8da09ii.apps.googleusercontent.com';
@@ -153,6 +162,55 @@ function personFor_(email) {
   return has('person_a_emails') ? 'a' : has('person_b_emails') ? 'b' : null;
 }
 
+// ─── App sessions (#176) ──────────────────────────────────────────────────────
+// Google ID tokens expire in ~1h, which is far too short to be the session: every new day the
+// client had no valid token, the silent One Tap refresh could not be relied on, and the user was
+// signed out. So we verify the Google token ONCE and then issue our own.
+//
+//   token = base64url(email) + '.' + exp + '.' + base64url(HMAC_SHA256(payload, secret))
+//
+// Stateless - nothing is persisted per session. The payload holds the EMAIL (not 'a'/'b') so the
+// Config allow-list is still consulted on every single request and a removal takes effect at once.
+const SESSION_DAYS = 60;
+
+// HMAC secret, generated on first use. Lives in Script Properties, never in this file (public repo).
+function sessionSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let s = props.getProperty('session_secret');
+  if (!s) {
+    s = Utilities.base64EncodeWebSafe(Utilities.getUuid() + ':' + Utilities.getUuid());
+    props.setProperty('session_secret', s);
+    console.log('session: generated a new session_secret (all existing sessions are now invalid)');
+  }
+  return s;
+}
+
+function sessionSign_(payload) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(payload, sessionSecret_()));
+}
+
+function mintSession_(email) {
+  const payload = Utilities.base64EncodeWebSafe(email) + '.' + (Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400);
+  return payload + '.' + sessionSign_(payload);
+}
+
+// Verified lowercase email from a session token, or null. Signature checked in constant time.
+function sessionEmail_(token) {
+  if (!token || typeof token !== 'string' || token.length > 512) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) { authReason_ = 'bad session'; return null; }
+  const payload = parts[0] + '.' + parts[1], sig = parts[2];
+  if (!(Number(parts[1]) > Math.floor(Date.now() / 1000))) { authReason_ = 'session expired'; return null; }
+  const expect = sessionSign_(payload);
+  if (sig.length !== expect.length) { authReason_ = 'bad session'; return null; }
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expect.charCodeAt(i);
+  if (diff !== 0) { authReason_ = 'bad session'; console.error('auth: session signature mismatch'); return null; }
+  try {
+    return String(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString()).toLowerCase();
+  } catch (err) { authReason_ = 'bad session'; return null; }
+}
+
 // Old unauthenticated GET endpoint: closed. Returns nothing useful to anyone.
 function doGet(e) {
   return json_({ ok: false, error: 'unauthorized' });
@@ -162,14 +220,44 @@ function doPost(e) {
   let data;
   try { data = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad request' }); }
 
-  const email = verifyIdToken_(data.idToken);
+  // #176 — prefer our own session token; fall back to a Google ID token and mint one from it.
+  let email = sessionEmail_(data.sessionToken);
+  let minted = '';
+  if (!email) {
+    const sessionReason = data.sessionToken ? authReason_ : ''; // why the session was rejected, if there was one
+    email = verifyIdToken_(data.idToken);
+    if (email) minted = mintSession_(email); // handed back below so the client stops needing Google
+    else if (sessionReason) authReason_ = sessionReason; // report 'session expired', not 'no token'
+  }
+  // The allow-list is re-read every request, session or not, so a removal takes effect immediately.
   const person = email ? personFor_(email) : null;
   if (!person) {
     console.error(email ? 'auth: ' + email + ' is not in person_a_emails / person_b_emails' : 'auth: token rejected (see line above)');
     return json_({ ok: false, error: 'unauthorized', reason: email ? 'email not in allow-list' : authReason_ });
   }
 
-  if (data.action === 'whoami') return json_({ ok: true, person: person, email: email });
+  // Any reply may carry a session: a fresh one when signing in, or a renewal when the current one
+  // is over halfway through its life (so an app in regular use never reaches the 60-day wall).
+  let session = minted;
+  if (!session && data.sessionToken) {
+    const exp = Number(String(data.sessionToken).split('.')[1]);
+    if (exp - Math.floor(Date.now() / 1000) < SESSION_DAYS * 86400 / 2) session = mintSession_(email);
+  }
+
+  if (data.action === 'whoami') return json_({ ok: true, person: person, email: email, session: session || '' });
+  if (session) return withSession_(handleAction_(data), session);
+  return handleAction_(data);
+}
+
+// Re-serialise a reply with the session token attached (ContentService output is write-only).
+function withSession_(out, session) {
+  let obj;
+  try { obj = JSON.parse(out.getContent()); } catch (err) { return out; }
+  obj.session = session;
+  return json_(obj);
+}
+
+function handleAction_(data) {
   if (data.action === 'getBills') return legacyDoGet_({ parameter: {} });
   if (data.action === 'getConfig') {
     const out = JSON.parse(legacyDoGet_({ parameter: { action: 'getConfig' } }).getContent());

@@ -6,7 +6,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { CONFIG_DEFAULTS } from './config.js';
 import { balanceFromBills } from './calc.js';
 import * as api from './api.js';
-import { clearIdToken } from './auth.js';
+import { clearIdToken, clearSession } from './auth.js';
 
 const StoreCtx = createContext(null);
 export const useStore = () => useContext(StoreCtx);
@@ -24,8 +24,13 @@ export function StoreProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('splitapp_user') || 'a');
   const switchPerspective = useCallback((who) => setCurrentUser(who), []);
   const signIn = useCallback((who) => { localStorage.setItem('splitapp_user', who); setAuthedUser(who); setCurrentUser(who); }, []);
-  const signOut = useCallback(() => { localStorage.removeItem('splitapp_user'); clearIdToken(); setAuthedUser(null); }, []);
-  useEffect(() => { api.onUnauthorized(signOut); return () => api.onUnauthorized(null); }, [signOut]); // token rejected/expired -> back to sign-in
+  // #176 — an expired session no longer throws you out. authedUser is kept, the screen stays where it
+  // is, and a re-auth sheet appears over it; signing in again resumes exactly where you were. Only the
+  // Settings "Sign out" button actually clears the identity.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const endReauth = useCallback(() => setSessionExpired(false), []);
+  useEffect(() => { api.onUnauthorized(() => setSessionExpired(true)); return () => api.onUnauthorized(null); }, []);
+  const signOut = useCallback(() => { localStorage.removeItem('splitapp_user'); clearIdToken(); clearSession(); setSessionExpired(false); setAuthedUser(null); }, []);
   const loadConfig = useCallback(async (url) => {
     const c = await api.fetchConfig(url);
     if (c && Object.keys(c).length) setConfig((prev) => ({ ...prev, ...mapRemoteConfig(c) }));
@@ -161,7 +166,7 @@ export function StoreProvider({ children }) {
   const clearCache = useCallback(() => { try { localStorage.removeItem('splitapp_state'); localStorage.removeItem('splitapp_outbox'); } catch {} outboxRef.current = {}; pendingRef.current = new Set(); setPendingIds(new Set()); setBills([]); refresh(); }, [refresh]); // #162 reset pending + outbox
 
   // Auto-pull from Sheets once we're hydrated and signed in (initial load / after sign-in).
-  useEffect(() => { if (ready && authedUser) refresh(); }, [ready, authedUser, refresh]);
+  useEffect(() => { if (ready && authedUser && !sessionExpired) refresh(); }, [ready, authedUser, sessionExpired, refresh]);
 
   const updateConfig = useCallback((patch) => {
     setConfig((prev) => {
@@ -182,7 +187,7 @@ export function StoreProvider({ children }) {
 
   const value = {
     bills, config, runningBalance, ready, currentUser, switchPerspective, pendingIds, // #164 expose unsynced-bill ids
-    authedUser, signIn, signOut, loadConfig,
+    authedUser, signIn, signOut, loadConfig, sessionExpired, endReauth, // #176
     detailId, editing, openDetail, closeDetail, startEdit, stopEdit, toast, showToast, // #165
     addBill, editBill, deleteBill, refresh, clearCache, updateConfig, setConfig, projectedBalance,
   };

@@ -8,6 +8,7 @@ import Settings from './screens/Settings.jsx';
 import SignIn from './screens/SignIn.jsx';
 import NewBillFlow from './screens/NewBillFlow.jsx';
 import BillDetail from './screens/BillDetail.jsx';
+import Reauth from './screens/Reauth.jsx';
 
 const ICONS = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5" />,
@@ -23,7 +24,7 @@ const TABS = [
 ];
 
 function Shell() {
-  const { ready, authedUser, detailId, editing, stopEdit, toast } = useStore();
+  const { ready, authedUser, detailId, editing, stopEdit, toast, sessionExpired } = useStore();
   const [tab, setTab] = useState('home');
   const [adding, setAdding] = useState(false);
   const [parked, setParked] = useState(false); // #149 — new-bill draft minimized to the basket (still mounted)
@@ -56,6 +57,7 @@ function Shell() {
         <button className="update-bar" onClick={() => window.location.reload()}>New version available — tap to reload</button>
       )}
       <Active />
+      {sessionExpired && <Reauth />}{/* #176 re-auth in place; the app stays mounted behind it */}
       {detailId && <BillDetail />}
       {editing && <NewBillFlow editing={editing} onClose={stopEdit} />}
       {/* New-bill flow: kept mounted while parked (hidden) so the draft survives (#149). */}

@@ -176,11 +176,29 @@ export default function BillDetail() {
         <div className="sec-label">BILL BREAKDOWN</div>
         <div className="card" style={{ padding: 0, marginBottom: 16 }}>
           {isQuick ? (
-            <div style={{ padding: '12px 14px', fontSize: 13 }}>
-              <Row l={`${nameA} only`} r={fmtMoney(fieldNum(billQuick?.aExpr), sym)} />
-              <Row l={`${nameB} only`} r={fmtMoney(fieldNum(billQuick?.bExpr), sym)} />
-              <Row l="Shared (50/50)" r={fmtMoney(Math.max(0, grand - fieldNum(billQuick?.aExpr) - fieldNum(billQuick?.bExpr)), sym)} />
-            </div>
+            (() => {
+              // #179 — a quick bill can carry one discount. `grand` is already net of it, so the
+              // shared line must work off the PRINTED total, not the grand total, or it reads short.
+              const qDiscs = (bill.charges?.discounts || []);
+              const qDiscTotal = qDiscs.reduce((t, d) => t + (d.amt || 0), 0);
+              const qPrinted = fieldNum(billQuick?.totalExpr) || (grand + qDiscTotal);
+              const qOnlyA = fieldNum(billQuick?.aExpr), qOnlyB = fieldNum(billQuick?.bExpr);
+              const modeLabel = (d) => d.assignTo === 'a' ? nameA : d.assignTo === 'b' ? nameB : d.assignTo === 'prop' ? 'proportional' : '50/50';
+              return (
+                <div style={{ padding: '12px 14px', fontSize: 13 }}>
+                  <Row l={`${nameA} only`} r={fmtMoney(qOnlyA, sym)} />
+                  <Row l={`${nameB} only`} r={fmtMoney(qOnlyB, sym)} />
+                  <Row l="Shared (50/50)" r={fmtMoney(Math.max(0, qPrinted - qOnlyA - qOnlyB), sym)} />
+                  {qDiscs.map((d) => (
+                    <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ color: 'var(--text2)' }}>{d.label || 'Discount'} ({modeLabel(d)})</span>
+                      <span style={{ color: '#2a9d5c' }}>−{fmtMoney(d.amt || 0, sym)}</span>
+                    </div>
+                  ))}
+                  {qDiscTotal > 0 && <Row l="Total" r={fmtMoney(grand, sym)} bold />}
+                </div>
+              );
+            })()
           ) : items.length === 0 ? (
             <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text3)' }}>No item detail — edit to add items.</div>
           ) : (

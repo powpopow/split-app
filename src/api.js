@@ -7,7 +7,7 @@
 // All functions take an explicit `sheetUrl` so dev can point at a TEST deployment and
 // prod is a one-line switch at cutover.
 
-import { getIdToken, refreshIdToken } from './auth.js';
+import { getIdToken, refreshIdToken, getSession, setSession, clearSession } from './auth.js';
 import { CONFIG_DEFAULTS } from './config.js';
 
 const LS_STATE = 'splitapp_state';
@@ -79,28 +79,35 @@ export async function fetchBills(sheetUrl, cfg = {}) {
 // Content-Type header, so the browser sends NO CORS preflight (the preflight from application/json
 // was the whole reason #10 went no-cors). The Apps Script response then reads just like our GETs,
 // so callers get { ok } back and can confirm/retry instead of firing blind. Never throws.
-// Every request carries the Google ID token; the Apps Script backend verifies it and checks the
-// email against the allow-list. On 'unauthorized' we try one silent token refresh, then retry once;
-// if that fails the store is told to sign out (queued writes stay in the outbox).
+// Every request carries our backend-issued SESSION token (60 days, #176) and, while we still have
+// one, the Google ID token. The backend prefers the session and mints a new one from the ID token
+// when there is no valid session — so sign-in happens once, not once a day. Any reply may carry a
+// `session` (fresh or renewed past halfway); we store it whenever it appears.
+// On 'unauthorized' the session is dead: drop it, try one best-effort silent ID-token refresh, retry
+// once, and only then tell the store (which prompts for re-auth in place, keeping the outbox).
 let unauthorizedHandler = null;
 export const onUnauthorized = (fn) => { unauthorizedHandler = fn; };
 
 async function rawPost(sheetUrl, body) {
-  const resp = await fetch(sheetUrl, { method: 'POST', body: JSON.stringify({ ...body, idToken: getIdToken() }) });
-  return resp.json().catch(() => ({ error: 'bad response from server' }));
+  const resp = await fetch(sheetUrl, { method: 'POST', body: JSON.stringify({ ...body, sessionToken: getSession(), idToken: getIdToken() }) });
+  const data = await resp.json().catch(() => ({ error: 'bad response from server' }));
+  if (data && data.session) setSession(data.session); // new or renewed session
+  return data;
 }
 
 async function call(sheetUrl, body) {
   let data = await rawPost(sheetUrl, body);
   if (data && data.error === 'unauthorized') {
-    const fresh = await refreshIdToken(CONFIG_DEFAULTS.googleClientId);
+    clearSession(); // whatever we were holding is expired or invalid — never send it again
+    const fresh = await refreshIdToken(CONFIG_DEFAULTS.googleClientId); // best-effort; usually declines
     if (fresh) data = await rawPost(sheetUrl, body);
     if (data && data.error === 'unauthorized' && unauthorizedHandler) unauthorizedHandler();
   }
   return data || {};
 }
 
-/** Used by the sign-in screen: which person (a|b) does the stored token belong to? No refresh/retry. */
+/** Sign-in / re-auth: which person (a|b) does the stored credential belong to? No refresh/retry.
+ *  rawPost stores the `session` the backend returns, so after this the app no longer needs Google. */
 export const whoami = (sheetUrl) => rawPost(sheetUrl, { action: 'whoami' });
 
 async function post(sheetUrl, body) {

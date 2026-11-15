@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store.jsx';
 import { COLORS } from '../config.js';
-import { setIdToken, clearIdToken } from '../auth.js';
+import { setIdToken, clearIdToken, clearSession } from '../auth.js';
 import { whoami } from '../api.js';
 
 // Decode a Google ID-token JWT payload (no verification needed client-side; GSI already
@@ -23,14 +23,15 @@ export default function SignIn() {
     // The server verifies the Google token and decides who you are (a | b) from the Config allow-list.
     const handle = async (resp) => {
       setError('');
+      clearSession(); // #176 drop any stale session so THIS Google account decides who we are
       setIdToken(resp.credential);
       const email = (decodeJWT(resp.credential).email || '').toLowerCase();
       try {
         const who = await whoami(config.googleSheetUrl);
         if (who && who.ok && (who.person === 'a' || who.person === 'b')) signIn(who.person);
-        else { clearIdToken(); setError(`${email || 'This account'} is not authorised to use this app.${who && (who.reason || who.error) ? ' (' + (who.reason || who.error) + ')' : ''}`); }
+        else { clearIdToken(); clearSession(); setError(`${email || 'This account'} is not authorised to use this app.${who && (who.reason || who.error) ? ' (' + (who.reason || who.error) + ')' : ''}`); }
       } catch {
-        clearIdToken();
+        clearIdToken(); clearSession();
         setError('Could not reach the server. Check your connection and try again.');
       }
     };
